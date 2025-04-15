@@ -51,7 +51,12 @@ setup_config() {
 
     # Load environment variables
     set -a # Automatically export all variables
-    source "$ENV_FILE"
+    # Check if ENV_FILE exists before sourcing
+    if [ -f "$ENV_FILE" ]; then
+        source "$ENV_FILE"
+    else
+        echo "Warning: Environment file $ENV_FILE not found." >&2
+    fi
     set +a
 
     # Check if keys are set (basic check)
@@ -68,7 +73,13 @@ setup_config() {
     fi
 
      # Load config settings
-    source "$CONFIG_FILE"
+     # Check if CONFIG_FILE exists before sourcing
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+    else
+         echo "Warning: Config file $CONFIG_FILE not found." >&2
+    fi
+
 
     # NOTE: Configuration completeness check moved to main()
 }
@@ -91,7 +102,7 @@ configure_settings() {
 
     # 1. Select API Provider
     local providers="Gemini\nOpenRouter"
-    API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=~3 --layout=reverse)
+    API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=4 --layout=reverse) # Use fixed height
 
     if [ -z "$API_PROVIDER" ]; then
         echo "Configuration cancelled."
@@ -128,7 +139,7 @@ configure_settings() {
             ;;
     esac
 
-    MODEL=$(echo -e "$model_list" | fzf --prompt="Select Model for $API_PROVIDER: " --height=~15 --layout=reverse)
+    MODEL=$(echo -e "$model_list" | fzf --prompt="Select Model for $API_PROVIDER: " --height=15 --layout=reverse) # Use fixed height
 
     if [ -z "$MODEL" ]; then
         echo "Configuration cancelled."
@@ -227,18 +238,36 @@ save_history() {
     # echo "History saved to: $CURRENT_HISTORY_FILE" # Optional: for debugging
 }
 
-# Function to start a new chat session
+# Function to start a new chat session, optionally prompting for a name
 start_new_session() {
     CHAT_HISTORY=() # Clear in-memory history
-    # Add system prompt if required by the API (OpenRouter often uses it, Gemini might too)
-    # Depending on API, system prompt might be a special first message or part of every request
-    # For simplicity here, let's assume it's implicitly handled or added during the API call function
-    # CHAT_HISTORY+=("$(create_message_json "system" "$SYSTEM_PROMPT")") # Example if needed as first message
 
-    local timestamp=$(date +"%Y%m%d_%H%M%S")
-    CURRENT_HISTORY_FILE="$HISTORY_DIR/chat_$timestamp.json"
+    local session_name filename timestamp sanitized_name
+
+    # Prompt for session name
+    read -e -p "Enter name for new chat session (leave blank for timestamp): " session_name
+
+    timestamp=$(date +"%Y%m%d_%H%M%S")
+
+    if [ -z "$session_name" ]; then
+        filename="chat_${timestamp}.json"
+        echo "Starting new timestamped chat session..."
+    else
+        # Sanitize the name: replace spaces with underscores, remove non-alphanumeric/-/_ characters
+        sanitized_name=$(echo "$session_name" | sed -e 's/ /_/g' -e 's/[^a-zA-Z0-9_-]//g')
+        if [ -z "$sanitized_name" ]; then # Handle case where sanitization removes everything
+             filename="chat_${timestamp}.json"
+             echo "Invalid name provided, using timestamp..."
+        else
+            # Append timestamp to user-provided name to avoid collisions easily
+            filename="${sanitized_name}_${timestamp}.json"
+            echo "Starting new named chat session..."
+        fi
+    fi
+
+    CURRENT_HISTORY_FILE="$HISTORY_DIR/$filename"
     echo "[]" > "$CURRENT_HISTORY_FILE" # Create empty JSON array file
-    echo "Starting new chat session: $CURRENT_HISTORY_FILE"
+    echo "Session file: $CURRENT_HISTORY_FILE"
 }
 
 # --- API Call Implementation ---
@@ -374,7 +403,7 @@ handle_command_copying() {
         # Use nl to number lines, then fzf for selection
         # Pipe numbered commands to fzf. --no-sort prevents fzf from reordering.
         # Use awk to strip the number and ">> " prefix after selection.
-        selected_command=$(echo -e "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=~10 --layout=reverse --no-sort --ansi)
+        selected_command=$(echo -e "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi) # Use fixed height
 
         if [ -n "$selected_command" ]; then
             # Extract the actual command after the number and ">> "
@@ -399,14 +428,8 @@ main() {
     echo "Welcome to AI Help! Provider: $API_PROVIDER, Model: $MODEL"
     echo "Type '/exit' to quit, '/history' to load previous chat, '/new' for new chat."
 
-    # Load latest history or start new session
-    local latest_history=$(ls -t "$HISTORY_DIR"/chat_*.json 2>/dev/null | head -n 1)
-    if [ -n "$latest_history" ]; then
-        load_history "$latest_history"
-        display_history # Show the loaded history
-    else
-        start_new_session
-    fi
+    # Always start a new session on script launch
+    start_new_session
 
     # Main loop
     while true; do
@@ -424,14 +447,18 @@ main() {
                 continue # Skip API call for this turn
                 ;;
             "/history")
-                local history_files=$(ls -t "$HISTORY_DIR"/chat_*.json 2>/dev/null)
+                # List ALL .json files, sorted by time (most recent first)
+                local history_files=$(ls -t "$HISTORY_DIR"/*.json 2>/dev/null)
                 if [ -z "$history_files" ]; then
                     echo "No history files found."
                     continue
                 fi
-                local chosen_file=$(echo "$history_files" | fzf --prompt="Select chat history to load: " --height=~10 --layout=reverse)
-                if [ -n "$chosen_file" ]; then
-                    load_history "$chosen_file"
+                # Use basename to show only filenames in fzf, then reconstruct full path
+                local chosen_filename=$(echo "$history_files" | xargs -n 1 basename | fzf --prompt="Select chat history to load: " --height=10 --layout=reverse)
+                if [ -n "$chosen_filename" ]; then
+                    # Reconstruct the full path
+                    local chosen_file_path="$HISTORY_DIR/$chosen_filename"
+                    load_history "$chosen_file_path"
                     display_history
                 fi
                 continue # Skip API call for this turn
@@ -440,7 +467,10 @@ main() {
                  echo "Switching to config..."
                  configure_settings # Re-run config
                  # Re-source config in case it changed
-                 source "$CONFIG_FILE"
+                 # Check if CONFIG_FILE exists before sourcing
+                 if [ -f "$CONFIG_FILE" ]; then
+                     source "$CONFIG_FILE"
+                 fi
                  echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
                  # Decide if we should start a new session or continue
                  start_new_session # Start fresh after config change
@@ -455,7 +485,7 @@ main() {
         # Add user message to history
         CHAT_HISTORY+=("$(create_message_json "user" "$user_input")")
 
-        # Call the API (placeholder for now)
+        # Call the API
         local ai_response
         ai_response=$(call_api "$user_input")
         local api_call_status=$?
@@ -463,12 +493,19 @@ main() {
         if [ $api_call_status -ne 0 ] || [ -z "$ai_response" ]; then
             echo "Error: API call failed."
             # Remove the last user message from history on failure? Optional.
-             unset 'CHAT_HISTORY[-1]'
+             if [ ${#CHAT_HISTORY[@]} -gt 0 ]; then # Check if history is not empty
+                unset 'CHAT_HISTORY[-1]'
+             fi
             continue
         fi
 
         # Add AI response to history
-        CHAT_HISTORY+=("$(create_message_json "assistant" "$ai_response")") # Use 'assistant' or 'model' based on API needs
+        # Use the correct role based on the API provider for the response
+        local response_role="assistant" # Default for OpenRouter
+        if [[ "$API_PROVIDER" == "Gemini" ]]; then
+            response_role="model"
+        fi
+        CHAT_HISTORY+=("$(create_message_json "$response_role" "$ai_response")")
 
         # Save history after successful call
         save_history
