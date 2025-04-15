@@ -17,15 +17,20 @@ check_dependency() {
 }
 
 check_clipboard_tool() {
-    if command -v wl-copy &> /dev/null; then
+    # Try wl-copy first: check if command exists AND if it runs without error (e.g., connects to Wayland)
+    if command -v wl-copy &> /dev/null && printf '' | wl-copy &> /dev/null; then
         CLIPBOARD_TOOL="wl-copy"
+        echo "Using clipboard tool: wl-copy" # Optional: for debugging
+    # If wl-copy fails or isn't present, try xclip
     elif command -v xclip &> /dev/null; then
         CLIPBOARD_TOOL="xclip -selection clipboard"
+        echo "Using clipboard tool: xclip" # Optional: for debugging
     else
-        echo "Error: No clipboard tool found (need 'wl-copy' for Wayland or 'xclip' for X11)." >&2
+        # Error: Neither working wl-copy nor xclip found
+        echo "Error: No functional clipboard tool found (need working 'wl-copy' for Wayland or 'xclip' for X11)." >&2
         exit 1
     fi
-    echo "Using clipboard tool: $CLIPBOARD_TOOL" # Optional: for debugging
+    # The debug echo is now inside the if/elif blocks
 }
 
 check_dependency "curl"
@@ -159,7 +164,7 @@ configure_settings() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="You are a helpful AI assistant running in a Linux terminal. Provide concise answers using Markdown. CRITICAL INSTRUCTION: When providing executable shell commands, you MUST prefix EACH command with '>> ' (double greater-than sign followed by a space). Present commands clearly, preferably one per line or in a distinct code block. Do NOT use the prefix for anything else (like explanations or non-executable examples). Example of correct formatting:\n>> ls -l\n>> sudo apt update && sudo apt upgrade"
+SYSTEM_PROMPT="You are a helpful AI assistant running in a Linux terminal. Format your answers clearly using Markdown for explanations and descriptions. Use Markdown features like lists, bold text, and code blocks (\`\`\`) where appropriate for readability. CRITICAL INSTRUCTION: For any executable shell command you provide, you MUST prefix the command line itself with '>> ' (double greater-than sign followed by a space). Do NOT use this prefix for explanations, examples that aren't directly runnable, or code snippets in other languages. Present commands clearly, ideally one per line or within a Markdown code block if part of a script. Example of correct command formatting:\n>> ls -al /tmp\n>> grep 'error' /var/log/syslog\n\nExample of using Markdown for explanation:\nTo list files, use the \`ls\` command. For detailed output, try:\n>> ls -l"
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -397,12 +402,9 @@ handle_command_copying() {
     local commands
     # Extract lines starting with optional whitespace then ">> "
     # Use printf for safer handling of potential special characters in ai_response
-    printf >&2 '%s\n%s\n%s\n' "--- Debug: AI Response for grep ---" "$ai_response" "---------------------------------" # DEBUG to stderr
     commands=$(printf '%s\n' "$ai_response" | grep '^[[:space:]]*>> ')
-    printf >&2 '%s\n%s\n%s\n' "--- Debug: Grep Result (commands) ---" "$commands" "---------------------------------" # DEBUG to stderr
 
     if [ -n "$commands" ]; then
-        printf >&2 '%s\n' "--- Debug: Entering fzf block ---" # DEBUG to stderr
         local selected_command
         # Use nl to number lines, then fzf for selection
         # Pipe numbered commands to fzf. --no-sort prevents fzf from reordering.
@@ -410,22 +412,14 @@ handle_command_copying() {
         # Redirect fzf stderr to /dev/null to avoid cluttering the main output, but allow selection to work
         selected_command=$(printf '%s\n' "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi 2>/dev/null) # Use fixed height, hide fzf stderr
 
-        printf >&2 '%s\n%s\n%s\n' "--- Debug: Fzf Result (selected_command) ---" "$selected_command" "------------------------------------" # DEBUG to stderr
-
         if [ -n "$selected_command" ]; then
-             printf >&2 '%s\n' "--- Debug: Entering sed block ---" # DEBUG to stderr
             # Extract the actual command after the number and potential leading space from grep/nl, then ">> "
             # Use printf for safer handling of potential special characters in selected_command
             local command_to_copy=$(printf '%s\n' "$selected_command" | sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]*>> //')
-             printf >&2 '%s\n%s\n%s\n' "--- Debug: Sed Result (command_to_copy) ---" "$command_to_copy" "-------------------------------------" # DEBUG to stderr
             # Copy to clipboard using printf -n to avoid adding a newline
             printf '%s' "$command_to_copy" | $CLIPBOARD_TOOL
             echo "Command copied to clipboard!" # This goes to stdout as user feedback
-        else
-             printf >&2 '%s\n' "--- Debug: selected_command is empty, skipping sed ---" # DEBUG to stderr
         fi
-    else
-         printf >&2 '%s\n' "--- Debug: commands is empty, skipping fzf ---" # DEBUG to stderr
     fi
 }
 
