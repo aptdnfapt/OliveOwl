@@ -159,7 +159,7 @@ configure_settings() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="You are a helpful AI assistant running in a Linux terminal. Provide concise answers. Format your responses using Markdown. VERY IMPORTANT: Prefix any executable shell commands you provide with '>> ' (a space after the arrows)."
+SYSTEM_PROMPT="You are a helpful AI assistant running in a Linux terminal. Provide concise answers using Markdown. CRITICAL INSTRUCTION: When providing executable shell commands, you MUST prefix EACH command with '>> ' (double greater-than sign followed by a space). Present commands clearly, preferably one per line or in a distinct code block. Do NOT use the prefix for anything else (like explanations or non-executable examples). Example of correct formatting:\n>> ls -l\n>> sudo apt update && sudo apt upgrade"
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -395,23 +395,37 @@ call_api() {
 handle_command_copying() {
     local ai_response="$1"
     local commands
-    # Extract lines starting with ">> "
-    commands=$(echo -e "$ai_response" | grep '^>> ')
+    # Extract lines starting with optional whitespace then ">> "
+    # Use printf for safer handling of potential special characters in ai_response
+    printf >&2 '%s\n%s\n%s\n' "--- Debug: AI Response for grep ---" "$ai_response" "---------------------------------" # DEBUG to stderr
+    commands=$(printf '%s\n' "$ai_response" | grep '^[[:space:]]*>> ')
+    printf >&2 '%s\n%s\n%s\n' "--- Debug: Grep Result (commands) ---" "$commands" "---------------------------------" # DEBUG to stderr
 
     if [ -n "$commands" ]; then
+        printf >&2 '%s\n' "--- Debug: Entering fzf block ---" # DEBUG to stderr
         local selected_command
         # Use nl to number lines, then fzf for selection
         # Pipe numbered commands to fzf. --no-sort prevents fzf from reordering.
-        # Use awk to strip the number and ">> " prefix after selection.
-        selected_command=$(echo -e "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi) # Use fixed height
+        # Use printf for safer handling of potential special characters in commands
+        # Redirect fzf stderr to /dev/null to avoid cluttering the main output, but allow selection to work
+        selected_command=$(printf '%s\n' "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi 2>/dev/null) # Use fixed height, hide fzf stderr
+
+        printf >&2 '%s\n%s\n%s\n' "--- Debug: Fzf Result (selected_command) ---" "$selected_command" "------------------------------------" # DEBUG to stderr
 
         if [ -n "$selected_command" ]; then
-            # Extract the actual command after the number and ">> "
-            local command_to_copy=$(echo "$selected_command" | sed -E 's/^[[:space:]]*[0-9]+\) >> //')
-            # Copy to clipboard
-            echo -n "$command_to_copy" | $CLIPBOARD_TOOL
-            echo "Command copied to clipboard!"
+             printf >&2 '%s\n' "--- Debug: Entering sed block ---" # DEBUG to stderr
+            # Extract the actual command after the number and potential leading space from grep/nl, then ">> "
+            # Use printf for safer handling of potential special characters in selected_command
+            local command_to_copy=$(printf '%s\n' "$selected_command" | sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]*>> //')
+             printf >&2 '%s\n%s\n%s\n' "--- Debug: Sed Result (command_to_copy) ---" "$command_to_copy" "-------------------------------------" # DEBUG to stderr
+            # Copy to clipboard using printf -n to avoid adding a newline
+            printf '%s' "$command_to_copy" | $CLIPBOARD_TOOL
+            echo "Command copied to clipboard!" # This goes to stdout as user feedback
+        else
+             printf >&2 '%s\n' "--- Debug: selected_command is empty, skipping sed ---" # DEBUG to stderr
         fi
+    else
+         printf >&2 '%s\n' "--- Debug: commands is empty, skipping fzf ---" # DEBUG to stderr
     fi
 }
 
