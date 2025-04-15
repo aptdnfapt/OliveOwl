@@ -223,35 +223,54 @@ create_message_json() {
     local role="$1"
     local content="$2"
     local model_used="$3" # Optional: Model name used for this response
-    local json_content json_object
+    local json_content json_object_string final_json_string
 
     # Escape special characters for JSON
     json_content=$(echo "$content" | jq -Rsa .) # Encodes string safely
 
-    if [[ "$API_PROVIDER" == "Gemini" ]]; then
-        # Gemini uses "user" and "model" roles, and a "parts" array
-        local gemini_role="$role"
-        if [[ "$role" == "assistant" ]]; then # Map OpenRouter's role if needed
-            gemini_role="model"
+    # Construct the base JSON object string based on role AND current API Provider
+    if [[ "$role" == "user" ]]; then
+        if [[ "$API_PROVIDER" == "Gemini" ]]; then
+            # Gemini user role format
+            json_object_string="{\"role\": \"user\", \"parts\": [{\"text\": $json_content}]}"
+        else
+            # OpenRouter user role format
+            json_object_string="{\"role\": \"user\", \"content\": $json_content}"
         fi
-         # Simple text part for now
-        echo "{\"role\": \"$gemini_role\", \"parts\": [{\"text\": $json_content}]}" | jq -c .
-    else # OpenRouter uses "user" and "assistant"
-        local openrouter_role="$role"
-        if [[ "$role" == "model" ]]; then # Map Gemini's role if needed
-             openrouter_role="assistant"
+        # No model_used for user, compact immediately
+        final_json_string=$(echo "$json_object_string" | jq -c .)
+    elif [[ "$role" == "assistant" || "$role" == "model" ]]; then
+        # Determine the correct AI role name based on the *current* API provider setting
+        local api_role="assistant" # Default for OpenRouter
+        if [[ "$API_PROVIDER" == "Gemini" ]]; then
+            api_role="model"
         fi
-        json_object="{\"role\": \"$openrouter_role\", \"content\": $json_content}"
+
+        # Construct base object string for AI response
+        if [[ "$API_PROVIDER" == "Gemini" ]]; then
+             # Gemini uses "parts" array
+             json_object_string="{\"role\": \"$api_role\", \"parts\": [{\"text\": $json_content}]}"
+        else
+             # OpenRouter uses "content"
+             json_object_string="{\"role\": \"$api_role\", \"content\": $json_content}"
+        fi
+
+        # Add model_used field if provided, then compact
+        if [[ -n "$model_used" ]]; then
+            # Use jq to safely add the model_used field to the existing JSON object string
+            final_json_string=$(echo "$json_object_string" | jq --arg model "$model_used" '. + {model_used: $model}' | jq -c .)
+        else
+            # Compact without adding model_used
+            final_json_string=$(echo "$json_object_string" | jq -c .)
+        fi
+    else
+        # Handle other potential roles? For now, just create a basic object.
+        json_object_string="{\"role\": \"$role\", \"content\": $json_content}"
+        final_json_string=$(echo "$json_object_string" | jq -c .) # Compact here
     fi
 
-    # Add model_used field if applicable
-    if [[ ("$role" == "assistant" || "$role" == "model") && -n "$model_used" ]]; then
-        # Use jq to safely add the model_used field to the existing JSON object
-        echo "$json_object" | jq --arg model "$model_used" '. + {model_used: $model}' | jq -c .
-    else
-        # Just return the original JSON object, compacted
-        echo "$json_object" | jq -c .
-    fi
+    # Return the final JSON object string
+    echo "$final_json_string"
 }
 
 
@@ -277,7 +296,8 @@ display_history() {
         local role content model_name_display
         # Use jq to extract role, content, and optionally model_used
         role=$(echo "$message_json" | jq -r '.role')
-        content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
+        # Handle both Gemini 'parts' and OpenRouter 'content' structures when reading
+        content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end // empty')
         model_name_display=$(echo "$message_json" | jq -r '.model_used // empty') # Get model_used if it exists
 
         if [[ "$role" == "user" ]]; then
@@ -370,8 +390,8 @@ start_new_session_interactive() {
         filename="chat_${timestamp}.json"
         echo "Starting new timestamped chat session..."
     else
-        # Sanitize the name: replace spaces with underscores, remove non-alphanumeric/-/_ characters
-        sanitized_name=$(echo "$session_name" | sed -e 's/ /_/g' -e 's/[^a-zA-Z0-9_-]//g')
+        # Sanitize the name: replace spaces with underscores, allow dots/hyphens, remove other non-alphanumeric/-_/.
+        sanitized_name=$(echo "$session_input" | sed 's/ /_/g; s/[^a-zA-Z0-9_.-]//g')
         if [ -z "$sanitized_name" ]; then # Handle case where sanitization removes everything
              filename="chat_${timestamp}.json"
              echo "Invalid name provided, using timestamp..."
@@ -385,6 +405,7 @@ start_new_session_interactive() {
     CURRENT_HISTORY_FILE="$HISTORY_DIR/$filename"
     echo "[]" > "$CURRENT_HISTORY_FILE" # Create empty JSON array file
     echo "Session file: $CURRENT_HISTORY_FILE"
+    return 0 # Indicate new session started
 }
 
 # --- API Call Implementation ---
@@ -397,19 +418,46 @@ call_api() {
     # The CHAT_HISTORY array already contains JSON strings in the correct format per provider
     # We just need to add the latest user message (which was already added before calling this function)
     # and format the whole thing as a JSON array string.
-    local history_json_array=$(printf "%s\n" "${CHAT_HISTORY[@]}" | jq -s '.')
+    local full_history_json_array=$(printf "%s\n" "${CHAT_HISTORY[@]}" | jq -s '.')
 
     # 2. Set API specifics based on provider
     if [[ "$API_PROVIDER" == "Gemini" ]]; then
+        # Gemini API requires only 'role' and 'parts' in the contents array.
+        # We need to strip the 'model_used' field and ensure consistent structure before sending.
+        # Explicitly delete 'model_used' and 'content', ensure 'parts' exists.
+        local api_history_json_array=$(echo "$full_history_json_array" | jq -c 'map(
+            if .role == "user" then
+                # Ensure user message has parts structure, remove content/model_used
+                .parts = (.parts // [{text: .content // ""}]) | del(.content) | del(.model_used)
+            elif .role == "model" then
+                 # Ensure model message has parts structure, remove content/model_used
+                .parts = (.parts // [{text: .content // ""}]) | del(.content) | del(.model_used)
+            else
+                empty # Skip any unexpected roles
+            end
+        )')
+
+        if [ -z "$api_history_json_array" ] || [[ "$api_history_json_array" == "null" ]] || [[ "$api_history_json_array" == "[]" ]]; then
+             echo "Error: Failed to prepare history for Gemini API (jq processing failed or resulted in null)." >&2
+             echo "Debug: Full history was:" >&2
+             echo "$full_history_json_array" >&2
+             return 1
+        fi
+
         api_key="$GEMINI_API_KEY"
         # Note: Gemini API URL structure might vary slightly based on region or specific model version. Adjust if needed.
         # Using v1beta for generative models as it's common.
         api_url="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${api_key}"
 
         # Gemini payload structure: { "contents": [history array], "systemInstruction": { "parts": [{"text": "..."}] } }
-        # Construct the payload JSON using jq for proper escaping
-        payload=$(jq -n --argjson history "$history_json_array" --arg system_prompt "$SYSTEM_PROMPT" \
+        # Construct the payload JSON using jq for proper escaping, using the cleaned history
+        payload=$(jq -n --argjson history "$api_history_json_array" --arg system_prompt "$SYSTEM_PROMPT" \
                   '{contents: $history, systemInstruction: {parts: [{"text": $system_prompt}]}}')
+
+        # --- DEBUGGING ---
+        # echo "DEBUG: Gemini Payload:" >&2
+        # echo "$payload" | jq . >&2 # Pretty print payload for debugging
+        # --- END DEBUGGING ---
 
         # 3. Make the curl request for Gemini
         response=$(curl -s -X POST "$api_url" \
@@ -426,7 +474,7 @@ call_api() {
         error_message=$(echo "$response" | jq -r '.error.message // empty')
         if [ -n "$error_message" ]; then
              echo "Error: Gemini API Error: $error_message" >&2
-             # You might want to see the full error: echo "$response" >&2
+             # echo "Full Gemini Response: $response" >&2 # for debugging
              return 1
         fi
 
@@ -456,10 +504,23 @@ call_api() {
         api_url="https://openrouter.ai/api/v1/chat/completions"
 
         # OpenRouter payload structure: { "model": "...", "messages": [history array including system prompt] }
-        # Add system prompt as the first message if not already there (or handle as needed)
-        # Our current history management adds user/assistant roles. Let's prepend the system prompt.
+        # OpenRouter expects 'role' and 'content'.
+        # Map our internal history (which might have 'parts' for Gemini or 'model_used') to this format.
+        local messages_json_array=$(echo "$full_history_json_array" | jq -c 'map(
+            if .role == "user" then
+                {role: .role, content: (.content // .parts[0].text // "")}
+            elif .role == "model" or .role == "assistant" then
+                # Use 'assistant' role for OpenRouter
+                {role: "assistant", content: (.content // .parts[0].text // "")}
+            else
+                 # Keep other roles like 'system' if present? For now, let's filter them out.
+                 empty
+            end
+        )')
+
+        # Prepend the system prompt message manually
         local system_message_json=$(create_message_json "system" "$SYSTEM_PROMPT")
-        local messages_json_array=$(printf "%s\n%s\n" "$system_message_json" "${CHAT_HISTORY[@]}" | jq -s '.')
+        messages_json_array=$(printf "%s\n%s\n" "$system_message_json" "$(echo "$messages_json_array" | jq -c '.[]')" | jq -s '.')
 
 
         payload=$(jq -n --arg model "$MODEL" --argjson messages "$messages_json_array" \
@@ -578,7 +639,7 @@ main() {
                 break
                 ;;
             "/new")
-                start_new_session
+                start_new_session_interactive # Use interactive version for /new command too
                 continue # Skip API call for this turn
                 ;;
             "/history")
@@ -595,7 +656,7 @@ main() {
                  fi
                  echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
                  # Decide if we should start a new session or continue
-                 start_new_session # Start fresh after config change
+                 start_new_session_interactive # Start fresh after config change
                  continue
                  ;;
 
@@ -634,7 +695,8 @@ main() {
         save_history
 
         # Display AI response using bat
-        echo -e "\n\e[32mAI ($MODEL):\e[0m" # Green for AI
+        # Display using the *current* model, as display_history handles showing the historical one
+        echo -e "\n\e[32mAI ($MODEL):\e[0m" # Green for AI - This shows the *current* model, which is fine for the *latest* response.
         echo "$ai_response" | bat --language md --paging=never --style=plain --color=always
 
         # Handle command copying
