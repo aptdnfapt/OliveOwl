@@ -218,10 +218,12 @@ CURRENT_HISTORY_FILE=""
 
 # Function to create a JSON object for a message (handles Gemini/OpenRouter differences)
 # Usage: create_message_json "user" "Hello there"
+# Usage: create_message_json "assistant" "AI response" "model-name"
 create_message_json() {
     local role="$1"
     local content="$2"
-    local json_content
+    local model_used="$3" # Optional: Model name used for this response
+    local json_content json_object
 
     # Escape special characters for JSON
     json_content=$(echo "$content" | jq -Rsa .) # Encodes string safely
@@ -239,9 +241,19 @@ create_message_json() {
         if [[ "$role" == "model" ]]; then # Map Gemini's role if needed
              openrouter_role="assistant"
         fi
-        echo "{\"role\": \"$openrouter_role\", \"content\": $json_content}" | jq -c .
+        json_object="{\"role\": \"$openrouter_role\", \"content\": $json_content}"
+    fi
+
+    # Add model_used field if applicable
+    if [[ ("$role" == "assistant" || "$role" == "model") && -n "$model_used" ]]; then
+        # Use jq to safely add the model_used field to the existing JSON object
+        echo "$json_object" | jq --arg model "$model_used" '. + {model_used: $model}' | jq -c .
+    else
+        # Just return the original JSON object, compacted
+        echo "$json_object" | jq -c .
     fi
 }
+
 
 # Function to load history from a file into the CHAT_HISTORY array
 # Usage: load_history "path/to/history.json"
@@ -262,15 +274,20 @@ load_history() {
 display_history() {
     echo "--- Chat History ---"
     for message_json in "${CHAT_HISTORY[@]}"; do
-        local role content
-        # Use jq to extract role and content, handling both formats
+        local role content model_name_display
+        # Use jq to extract role, content, and optionally model_used
         role=$(echo "$message_json" | jq -r '.role')
         content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
+        model_name_display=$(echo "$message_json" | jq -r '.model_used // empty') # Get model_used if it exists
 
         if [[ "$role" == "user" ]]; then
             echo -e "\n\e[34mYou:\e[0m $content" # Blue for user
         elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
-             echo -e "\n\e[32mAI ($MODEL):\e[0m" # Green for AI
+             # Use the stored model name if available, otherwise use the current $MODEL
+             if [ -z "$model_name_display" ]; then
+                 model_name_display="$MODEL" # Fallback for older history
+             fi
+             echo -e "\n\e[32mAI ($model_name_display):\e[0m" # Green for AI
              # Use bat for markdown rendering of AI response
              echo "$content" | bat --language md --paging=never --style=plain --color=always
         fi
@@ -289,18 +306,67 @@ save_history() {
     # echo "History saved to: $CURRENT_HISTORY_FILE" # Optional: for debugging
 }
 
-# Function to start a new chat session, optionally prompting for a name
-start_new_session() {
+# Function to start a new timestamped chat session (used as fallback)
+start_timestamped_session() {
     CHAT_HISTORY=() # Clear in-memory history
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local filename="chat_${timestamp}.json"
+    CURRENT_HISTORY_FILE="$HISTORY_DIR/$filename"
+    echo "[]" > "$CURRENT_HISTORY_FILE" # Create empty JSON array file
+    echo "Starting new timestamped chat session: $CURRENT_HISTORY_FILE"
+}
 
-    local session_name filename timestamp sanitized_name
+# Function to handle loading history via fzf selection
+# Returns 0 on success, 1 on failure/cancel
+load_history_via_fzf() {
+    local history_files chosen_filename chosen_file_path
+    # List ALL .json files, sorted by time (most recent first)
+    history_files=$(ls -t "$HISTORY_DIR"/*.json 2>/dev/null)
+    if [ -z "$history_files" ]; then
+        echo "No history files found." >&2
+        return 1
+    fi
+    # Use basename to show only filenames in fzf, then reconstruct full path
+    chosen_filename=$(echo "$history_files" | xargs -n 1 basename | fzf --prompt="Select chat history to load: " --height=10 --layout=reverse)
+    if [ -n "$chosen_filename" ]; then
+        # Reconstruct the full path
+        chosen_file_path="$HISTORY_DIR/$chosen_filename"
+        load_history "$chosen_file_path"
+        display_history
+        return 0 # Success
+    else
+        echo "History loading cancelled." >&2
+        return 1 # Failure / Cancelled
+    fi
+}
 
-    # Prompt for session name
-    read -e -p "Enter name for new chat session (leave blank for timestamp): " session_name
 
+# Function to start a new chat session, prompting for name or handling commands
+# Returns 0 if new session started, 1 if history loaded, exits on /exit
+start_new_session_interactive() {
+    CHAT_HISTORY=() # Clear in-memory history
+    local session_input filename timestamp sanitized_name
+
+    # Prompt for session name or command
+    read -e -p "Enter name for new chat session (or /history, /exit): " session_input
+
+    # Handle commands first
+    if [[ "$session_input" == "/exit" ]]; then
+        echo "Exiting."
+        exit 0
+    elif [[ "$session_input" == "/history" ]]; then
+        if load_history_via_fzf; then
+             return 1 # Indicate history was loaded successfully
+        else
+             # If history loading failed/cancelled, start a default timestamped session
+             start_timestamped_session
+             return 0 # Indicate new (fallback) session started
+        fi
+    fi
+
+    # If not a command, proceed with naming logic
     timestamp=$(date +"%Y%m%d_%H%M%S")
-
-    if [ -z "$session_name" ]; then
+    if [ -z "$session_input" ]; then
         filename="chat_${timestamp}.json"
         echo "Starting new timestamped chat session..."
     else
@@ -486,11 +552,19 @@ main() {
         exit 1
     fi
 
-    echo "Welcome to AI Help! Provider: $API_PROVIDER, Model: $MODEL"
-    echo "Type '/exit' to quit, '/history' to load previous chat, '/new' for new chat."
+    # Define colors (optional, adjust as needed)
+    local color_cmd='\e[36m' # Cyan for commands
+    local color_reset='\e[0m'
 
-    # Always start a new session on script launch
-    start_new_session
+    echo "Welcome to AI Help! Provider: $API_PROVIDER, Model: $MODEL"
+    echo -e "Type ${color_cmd}/exit${color_reset} to quit, ${color_cmd}/history${color_reset} to load previous chat, ${color_cmd}/new${color_reset} for new chat."
+
+    # Start new session interactively or load history
+    start_new_session_interactive
+    local start_status=$? # Capture return status (0=new, 1=history loaded)
+
+    # If start_status is 1, history was already loaded and displayed by load_history_via_fzf
+    # If start_status is 0, a new session was created by start_new_session_interactive or start_timestamped_session
 
     # Main loop
     while true; do
@@ -508,20 +582,7 @@ main() {
                 continue # Skip API call for this turn
                 ;;
             "/history")
-                # List ALL .json files, sorted by time (most recent first)
-                local history_files=$(ls -t "$HISTORY_DIR"/*.json 2>/dev/null)
-                if [ -z "$history_files" ]; then
-                    echo "No history files found."
-                    continue
-                fi
-                # Use basename to show only filenames in fzf, then reconstruct full path
-                local chosen_filename=$(echo "$history_files" | xargs -n 1 basename | fzf --prompt="Select chat history to load: " --height=10 --layout=reverse)
-                if [ -n "$chosen_filename" ]; then
-                    # Reconstruct the full path
-                    local chosen_file_path="$HISTORY_DIR/$chosen_filename"
-                    load_history "$chosen_file_path"
-                    display_history
-                fi
+                load_history_via_fzf # Call the refactored function
                 continue # Skip API call for this turn
                 ;;
              "/config")
@@ -566,7 +627,8 @@ main() {
         if [[ "$API_PROVIDER" == "Gemini" ]]; then
             response_role="model"
         fi
-        CHAT_HISTORY+=("$(create_message_json "$response_role" "$ai_response")")
+        # Pass the current $MODEL when creating the AI response JSON
+        CHAT_HISTORY+=("$(create_message_json "$response_role" "$ai_response" "$MODEL")")
 
         # Save history after successful call
         save_history
