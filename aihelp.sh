@@ -17,15 +17,37 @@ check_dependency() {
 }
 
 check_clipboard_tool() {
-    if command -v wl-copy &> /dev/null; then
-        CLIPBOARD_TOOL="wl-copy"
-    elif command -v xclip &> /dev/null; then
-        CLIPBOARD_TOOL="xclip -selection clipboard"
-    else
+    # Prioritize based on session type if available
+    if [[ "$XDG_SESSION_TYPE" == "x11" ]]; then
+        if command -v xclip &> /dev/null; then
+            CLIPBOARD_TOOL="xclip -selection clipboard"
+        elif command -v wl-copy &> /dev/null; then # Fallback if xclip missing but wl-copy exists
+             CLIPBOARD_TOOL="wl-copy"
+        fi
+    elif [[ "$XDG_SESSION_TYPE" == "wayland" ]]; then
+         if command -v wl-copy &> /dev/null; then
+            CLIPBOARD_TOOL="wl-copy"
+         elif command -v xclip &> /dev/null; then # Fallback if wl-copy missing but xclip exists
+             CLIPBOARD_TOOL="xclip -selection clipboard"
+         fi
+    fi
+
+    # If not determined by session type, use original detection logic
+    if [ -z "$CLIPBOARD_TOOL" ]; then
+        if command -v wl-copy &> /dev/null; then
+            CLIPBOARD_TOOL="wl-copy"
+        elif command -v xclip &> /dev/null; then
+            CLIPBOARD_TOOL="xclip -selection clipboard"
+        fi
+    fi
+
+    # Final check if a tool was found
+    if [ -z "$CLIPBOARD_TOOL" ]; then
         echo "Error: No clipboard tool found (need 'wl-copy' for Wayland or 'xclip' for X11)." >&2
         exit 1
+    else
+         echo "Using clipboard tool: $CLIPBOARD_TOOL (Session type: ${XDG_SESSION_TYPE:-unset})"
     fi
-    echo "Using clipboard tool: $CLIPBOARD_TOOL" # Optional: for debugging
 }
 
 check_dependency "curl"
@@ -118,8 +140,21 @@ configure_settings() {
                 echo "Error: GEMINI_API_KEY not set in $ENV_FILE." >&2
                 exit 1
             fi
-            # Hardcoded list for Gemini (adjust as needed)
-            model_list="gemini-1.5-flash-latest\ngemini-1.5-pro-latest\ngemini-pro"
+            # Expanded hardcoded list for Gemini
+            model_list=$(cat << MODELS
+gemini-1.5-pro-latest
+gemini-1.5-flash-latest
+gemini-1.0-pro
+gemini-1.0-pro-vision
+gemini-2.0-flash
+gemini-2.0-flash-lite
+gemini-2.0-flash-thinking-exp-01-21
+gemini-2.0-flash-thinking-exp-1219
+gemini-2.0-pro-exp-02-05
+gemini-2.5-pro-exp-03-25
+gemma-3-27b-it
+MODELS
+)
             ;;
         "OpenRouter")
              # Check for OpenRouter Key
@@ -158,8 +193,24 @@ configure_settings() {
 }
 
 # --- System Prompt ---
-# Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="You are a helpful AI assistant running in a Linux terminal. Provide concise answers. Format your responses using Markdown. VERY IMPORTANT: Prefix any executable shell commands you provide with '>> ' (a space after the arrows)."
+# Instructs the AI on formatting and behavior - Updated for stricter command formatting
+SYSTEM_PROMPT=$(cat << 'EOF'
+You are a helpful AI assistant running in a Linux terminal. Provide concise answers. Format your responses using Markdown.
+CRITICAL INSTRUCTION FOR COMMANDS:
+If you provide an executable shell command that the user might want to copy and run:
+1. Prefix the command *only* with '>> ' (two greater-than signs followed by a single space).
+2. Place EACH such command on its OWN LINE.
+3. Do NOT wrap the '>> command' line in backticks (`), quotes (", '), or list markers (*, -).
+Example of CORRECT formatting for a copyable command:
+>> ls -la /tmp
+
+Example of INCORRECT formatting:
+* `>> pwd`
+* `>> cd ..`
+* ">> echo hello"
+Only use the '>> ' prefix for commands intended to be easily copied. For explanatory code snippets, use standard Markdown code blocks.
+EOF
+)
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -394,20 +445,30 @@ call_api() {
 # --- Command Copying ---
 handle_command_copying() {
     local ai_response="$1"
-    local commands
-    # Extract lines starting with ">> "
-    commands=$(echo -e "$ai_response" | grep '^>> ')
+    local commands_with_prefix cleaned_commands selected_command command_to_copy
 
-    if [ -n "$commands" ]; then
-        local selected_command
-        # Use nl to number lines, then fzf for selection
-        # Pipe numbered commands to fzf. --no-sort prevents fzf from reordering.
-        # Use awk to strip the number and ">> " prefix after selection.
-        selected_command=$(echo -e "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi) # Use fixed height
+    # Extract lines containing ">> "
+    commands_with_prefix=$(echo -e "$ai_response" | grep '>> ')
+
+    if [ -n "$commands_with_prefix" ]; then
+        # Extract text *after* ">> ", then clean it
+        # 1. Use sed to keep only the part after ">> " on each matching line
+        # 2. Use another sed to remove leading/trailing whitespace and backticks from the result
+        extracted_commands=$(echo -e "$commands_with_prefix" | sed -n 's/.*>> //p')
+        cleaned_commands=$(echo -e "$extracted_commands" | sed -E 's/^[[:space:]`]+//; s/[[:space:]`]+$//')
+
+
+        if [ -z "$cleaned_commands" ]; then
+             # echo "Debug: No commands left after cleaning." >&2
+             return # Nothing left to copy
+        fi
+
+        # Use nl to number the *cleaned* commands, then fzf for selection
+        selected_command=$(echo -e "$cleaned_commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi)
 
         if [ -n "$selected_command" ]; then
-            # Extract the actual command after the number and ">> "
-            local command_to_copy=$(echo "$selected_command" | sed -E 's/^[[:space:]]*[0-9]+\) >> //')
+            # Extract the actual command part (after the number and parenthesis)
+            command_to_copy=$(echo "$selected_command" | sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]*//')
             # Copy to clipboard
             echo -n "$command_to_copy" | $CLIPBOARD_TOOL
             echo "Command copied to clipboard!"
