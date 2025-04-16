@@ -164,7 +164,11 @@ configure_settings() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="You are a helpful AI assistant running in a Linux terminal. Format your answers clearly using Markdown for explanations and descriptions. Use Markdown features like lists, bold text, and code blocks (\`\`\`) where appropriate for readability. CRITICAL INSTRUCTION: For any executable shell command you provide, you MUST prefix the command line itself with '>> ' (double greater-than sign followed by a space). Do NOT use this prefix for explanations, examples that aren't directly runnable, or code snippets in other languages. Present commands clearly, ideally one per line or within a Markdown code block if part of a script. Example of correct command formatting:\n>> ls -al /tmp\n>> grep 'error' /var/log/syslog\n\nExample of using Markdown for explanation:\nTo list files, use the \`ls\` command. For detailed output, try:\n>> ls -l"
+SYSTEM_PROMPT="You are a helpful AI assistant. Provide concise and clear answers. Use Markdown for formatting explanations (lists, bold, etc.).
+CRITICAL FORMATTING RULES FOR COPYABLE CONTENT:
+1.  For **executable Linux shell commands**, you MUST prefix EACH command line with '>> ' (double greater-than sign followed by a space). Example:\n>> ls -l\n>> grep 'error' log.txt
+2.  For **code snippets in other languages (Python, JavaScript, etc.) or specific commands for other applications (like Minecraft)**, you MUST enclose the snippet/command within a standard Markdown code block (\`\`\`). Example:\n\`\`\`python\nprint('Hello')\n\`\`\`\n\`\`\`minecraft\n/give @p diamond_sword\n\`\`\`
+IMPORTANT: Provide requested commands or code snippets directly using the correct format above, even if they are not Linux shell commands. Fulfill the user's request for the code/command itself when asked."
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -399,26 +403,108 @@ call_api() {
 # --- Command Copying ---
 handle_command_copying() {
     local ai_response="$1"
-    local commands
-    # Extract lines starting with optional whitespace then ">> "
-    # Use printf for safer handling of potential special characters in ai_response
-    commands=$(printf '%s\n' "$ai_response" | grep '^[[:space:]]*>> ')
+    local line
+    local -a copyable_items=() # Array to store full items (lines or blocks)
+    local -a copyable_types=() # Array to store type ('shell' or 'code')
+    local in_block=0
+    local current_block=""
 
-    if [ -n "$commands" ]; then
-        local selected_command
-        # Use nl to number lines, then fzf for selection
-        # Pipe numbered commands to fzf. --no-sort prevents fzf from reordering.
-        # Use printf for safer handling of potential special characters in commands
-        # Redirect fzf stderr to /dev/null to avoid cluttering the main output, but allow selection to work
-        selected_command=$(printf '%s\n' "$commands" | nl -w1 -s') ' | fzf --prompt="Select command to copy (Esc to cancel): " --height=10 --layout=reverse --no-sort --ansi 2>/dev/null) # Use fixed height, hide fzf stderr
+    # Use process substitution to read line by line, preserving whitespace
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Check for shell command prefix first (quote the regex pattern)
+        if [[ "$line" =~ '^[[:space:]]*>>' ]]; then
+            # If we were in a block, it's implicitly ended by the shell command
+            if [[ $in_block -eq 1 ]] && [ -n "$current_block" ]; then
+                copyable_items+=("$current_block")
+                copyable_types+=("code")
+                current_block=""
+            fi
+            in_block=0
+            copyable_items+=("$line")
+            copyable_types+=("shell")
+        # Check for code block fences
+        elif [[ "$line" =~ ^\`\`\` ]]; then
+            if [[ $in_block -eq 0 ]]; then
+                # Entering a block
+                in_block=1
+                current_block="" # Start accumulating
+            else
+                # Exiting a block
+                in_block=0
+                if [ -n "$current_block" ]; then
+                    copyable_items+=("$current_block")
+                    copyable_types+=("code")
+                fi
+                current_block=""
+            fi
+        # If inside a block, accumulate content
+        elif [[ $in_block -eq 1 ]]; then
+            # Append line to current block, handling the first line vs subsequent lines
+            if [ -z "$current_block" ]; then
+                current_block="$line"
+            else
+                current_block=$(printf '%s\n%s' "$current_block" "$line")
+            fi
+        fi
+    done < <(printf '%s\n' "$ai_response")
 
-        if [ -n "$selected_command" ]; then
-            # Extract the actual command after the number and potential leading space from grep/nl, then ">> "
-            # Use printf for safer handling of potential special characters in selected_command
-            local command_to_copy=$(printf '%s\n' "$selected_command" | sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]*>> //')
-            # Copy to clipboard using printf -n to avoid adding a newline
-            printf '%s' "$command_to_copy" | $CLIPBOARD_TOOL
-            echo "Command copied to clipboard!" # This goes to stdout as user feedback
+    # After loop, check if we were left inside a block (e.g., response ended abruptly)
+    if [[ $in_block -eq 1 ]] && [ -n "$current_block" ]; then
+        copyable_items+=("$current_block")
+        copyable_types+=("code")
+    fi
+
+    local count=${#copyable_items[@]}
+
+    # If items were found, prompt the user
+    if [[ $count -gt 0 ]]; then
+        echo "--- Copyable Items ---"
+        for i in "${!copyable_items[@]}"; do
+            local item_text="${copyable_items[i]}"
+            local item_type="${copyable_types[i]}"
+            local display_text # Text to show in the list
+            local first_line
+
+            if [[ "$item_type" == "shell" ]]; then
+                # Strip prefix for display
+                display_text=$(echo "$item_text" | sed -E 's/^[[:space:]]*>>[[:space:]]*//')
+                first_line="$display_text"
+            else # type == "code"
+                display_text="$item_text"
+                # Get first line for display, add ellipsis if multi-line
+                first_line=$(echo "$display_text" | head -n 1)
+                if [[ $(echo "$display_text" | wc -l) -gt 1 ]]; then
+                    first_line="$first_line [...]"
+                fi
+            fi
+            printf "%d) %s\n" $((i+1)) "$first_line"
+        done
+        echo "--------------------"
+
+        local selection
+        read -p "Enter number to copy (1-$count), or 0 to cancel: " selection
+
+        # Validate input
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$count" ]; then
+            local index=$((selection - 1))
+            local text_to_copy="${copyable_items[index]}"
+            local type_to_copy="${copyable_types[index]}"
+            local final_content
+
+            if [[ "$type_to_copy" == "shell" ]]; then
+                # Strip prefix for copying
+                final_content=$(echo "$text_to_copy" | sed -E 's/^[[:space:]]*>>[[:space:]]*//')
+            else # type == "code"
+                final_content="$text_to_copy"
+            fi
+
+            # Copy to clipboard
+            printf '%s' "$final_content" | $CLIPBOARD_TOOL
+            echo "Copied to clipboard!"
+        elif [[ "$selection" == "0" ]]; then
+             echo "Copy cancelled."
+        else
+            echo "Invalid selection."
         fi
     fi
 }
