@@ -158,7 +158,7 @@ configure_settings() {
   echo "Configuration saved to $CONFIG_FILE:"
   echo "  Provider: $API_PROVIDER"
   echo "  Model: $MODEL"
-  echo "Setup complete. You can now run 'aihelp.sh'."
+  echo "Setup complete. You can now run '$0'." # Use $0 for the current script name
 }
 
 # --- System Prompt ---
@@ -234,6 +234,33 @@ display_history() {
   echo "--------------------"
 }
 
+# Function to select and load a history file using fzf
+# Returns 0 on success, 1 on failure/cancel
+select_and_load_history() {
+  # List ALL .json files, sorted by time (most recent first)
+  local history_files
+  history_files=$(ls -t "$HISTORY_DIR"/*.json 2>/dev/null)
+  if [ -z "$history_files" ]; then
+    echo "No history files found."
+    return 1 # Indicate failure
+  fi
+
+  # Use basename to show only filenames in fzf, then reconstruct full path
+  local chosen_filename
+  chosen_filename=$(echo "$history_files" | xargs -n 1 basename | fzf --prompt="Select chat history to load: " --height=10 --layout=reverse)
+
+  if [ -n "$chosen_filename" ]; then
+    # Reconstruct the full path
+    local chosen_file_path="$HISTORY_DIR/$chosen_filename"
+    load_history "$chosen_file_path" # load_history already prints messages
+    display_history
+    return 0 # Indicate success
+  else
+    echo "History loading cancelled."
+    return 1 # Indicate failure/cancel
+  fi
+}
+
 # Function to save the current CHAT_HISTORY array to CURRENT_HISTORY_FILE
 save_history() {
   if [ -z "$CURRENT_HISTORY_FILE" ]; then
@@ -245,14 +272,13 @@ save_history() {
   # echo "History saved to: $CURRENT_HISTORY_FILE" # Optional: for debugging
 }
 
-# Function to start a new chat session, optionally prompting for a name
-start_new_session() {
-  CHAT_HISTORY=() # Clear in-memory history
+# Function to create the actual new session file
+# Takes an optional session name as argument
+create_new_session_file() {
+  local session_name="$1" # Optional name passed from start_new_session
+  local filename timestamp sanitized_name
 
-  local session_name filename timestamp sanitized_name
-
-  # Prompt for session name
-  read -e -p "Enter name for new chat session (leave blank for timestamp): " session_name
+  CHAT_HISTORY=() # Clear in-memory history for the new session
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
 
@@ -276,6 +302,32 @@ start_new_session() {
   echo "[]" >"$CURRENT_HISTORY_FILE" # Create empty JSON array file
   echo "Session file: $CURRENT_HISTORY_FILE"
 }
+
+# Function to handle the initial session prompt (new, load history, or exit)
+# Returns 0 if a session was started (new or loaded), 1 if history loading failed/cancelled
+start_new_session() {
+  local user_choice
+
+  # Prompt for session name or command
+  read -e -p "Enter name for new chat session (or /history, /exit): " user_choice
+
+  case "$user_choice" in
+  "/exit")
+    echo "Exiting AI Help."
+    exit 0
+    ;;
+  "/history")
+    select_and_load_history # This function handles messages and returns status
+    return $? # Return status (0 for success, 1 for fail/cancel)
+    ;;
+  *)
+    # Treat anything else (name or blank) as a request for a new session
+    create_new_session_file "$user_choice"
+    return 0 # Indicate success (new session created)
+    ;;
+  esac
+}
+
 
 # --- API Call Implementation ---
 # Takes user input, sends history + input to API, returns AI response text
@@ -486,10 +538,18 @@ main() {
   fi
 
   echo "Welcome to AI Help! Provider: $API_PROVIDER, Model: $MODEL"
-  echo "Type '/exit' to quit, '/history' to load previous chat, '/new' for new chat."
+  echo "Type '/exit' to quit, '/history' to load previous chat, '/new' for new chat, '/config' to reconfigure."
 
-  # Always start a new session on script launch
-  start_new_session
+  # Initial session setup
+  local start_status
+  start_new_session # Prompt user for initial action (new, history, exit)
+  start_status=$?
+  if [ $start_status -ne 0 ]; then
+      # If /history was chosen but failed or was cancelled, start a default new session
+      echo "Falling back to new timestamped session."
+      create_new_session_file "" # Create default timestamped session
+  fi
+  # If start_new_session exited or loaded history successfully, we proceed
 
   # Main loop
   while true; do
@@ -503,37 +563,41 @@ main() {
       break
       ;;
     "/new")
+      # Prompt again for new session name, history load, or exit
+      local new_status
       start_new_session
+      new_status=$?
+       if [ $new_status -ne 0 ]; then
+          # If /history was chosen but failed or was cancelled, start a default new session
+          echo "Falling back to new timestamped session."
+          create_new_session_file "" # Create default timestamped session
+       fi
       continue # Skip API call for this turn
       ;;
     "/history")
-      # List ALL .json files, sorted by time (most recent first)
-      local history_files=$(ls -t "$HISTORY_DIR"/*.json 2>/dev/null)
-      if [ -z "$history_files" ]; then
-        echo "No history files found."
-        continue
-      fi
-      # Use basename to show only filenames in fzf, then reconstruct full path
-      local chosen_filename=$(echo "$history_files" | xargs -n 1 basename | fzf --prompt="Select chat history to load: " --height=10 --layout=reverse)
-      if [ -n "$chosen_filename" ]; then
-        # Reconstruct the full path
-        local chosen_file_path="$HISTORY_DIR/$chosen_filename"
-        load_history "$chosen_file_path"
-        display_history
-      fi
+      # Just attempt to load history, don't change session if cancelled
+      select_and_load_history
       continue # Skip API call for this turn
       ;;
     "/config")
       echo "Switching to config..."
       configure_settings # Re-run config
       # Re-source config in case it changed
+      # Re-source config in case it changed
       # Check if CONFIG_FILE exists before sourcing
       if [ -f "$CONFIG_FILE" ]; then
         source "$CONFIG_FILE"
       fi
       echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
-      # Decide if we should start a new session or continue
-      start_new_session # Start fresh after config change
+      # After config, prompt for session action again
+      local config_status
+      start_new_session
+      config_status=$?
+       if [ $config_status -ne 0 ]; then
+          # If /history was chosen but failed or was cancelled, start a default new session
+          echo "Falling back to new timestamped session."
+          create_new_session_file "" # Create default timestamped session
+       fi
       continue
       ;;
 
