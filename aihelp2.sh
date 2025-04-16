@@ -485,23 +485,27 @@ handle_command_copying() {
   # Use process substitution to read line by line, preserving whitespace
   while IFS= read -r line || [[ -n "$line" ]]; do
     # Check for triple quote OR triple backtick delimiters, allowing optional surrounding whitespace
+    local is_delimiter=0
     if [[ "$line" =~ ^[[:space:]]*(\"\"\"|\`\`\`)[[:space:]]*$ ]]; then
-      if [[ $in_block -eq 0 ]]; then
-        # Entering a block
-        in_block=1
-        current_block="" # Start accumulating block content (excluding the delimiter)
-      else
-        # Exiting a block
-        in_block=0
-        # Store the accumulated block content.
-        # Using printf '%s' ensures no trailing newline is added if the block itself didn't end with one.
-        # Check if current_block is non-empty before adding.
-        if [ -n "$current_block" ]; then
-             copyable_items+=("$(printf '%s' "$current_block")")
+        is_delimiter=1
+    fi
+
+    if [[ $is_delimiter -eq 1 ]]; then
+        if [[ $in_block -eq 0 ]]; then
+            # Entering a block
+            in_block=1
+            current_block="" # Reset accumulator
+        else
+            # Exiting a block
+            in_block=0
+            # Store the accumulated block content only if it's not empty
+            if [ -n "$current_block" ]; then
+                # Store the raw block content
+                copyable_items+=("$current_block")
+            fi
+            current_block="" # Reset accumulator
         fi
-        current_block=""
-      fi
-    # If inside a block, accumulate content
+    # If inside a block AND the current line is NOT a delimiter, accumulate content
     elif [[ $in_block -eq 1 ]]; then
       # Append line to current block, handling the first line vs subsequent lines
       if [ -z "$current_block" ]; then
@@ -510,6 +514,20 @@ handle_command_copying() {
         # Append with a newline
         current_block=$(printf '%s\n%s' "$current_block" "$line")
       fi
+    # If NOT inside a block AND the line is NOT a delimiter, check for inline backticks
+    elif [[ $in_block -eq 0 ]]; then
+        # Use grep -oP to find all non-overlapping matches of `content`
+        # The regex `(?<=\`).*?(?=\`)` uses lookarounds to extract content between backticks
+        # Read matches into an array
+        local inline_matches=()
+        mapfile -t inline_matches < <(echo "$line" | grep -oP '`([^`]+)`' | sed 's/^`//;s/`$//') # Extract content between backticks
+
+        # Add each found inline match to copyable_items
+        for match in "${inline_matches[@]}"; do
+            if [ -n "$match" ]; then # Ensure match is not empty
+                 copyable_items+=("$match")
+            fi
+        done
     fi
   done < <(printf '%s\n' "$ai_response")
 
@@ -520,19 +538,28 @@ handle_command_copying() {
 
   # If items were found, prompt the user
   if [[ $count -gt 0 ]]; then
-    echo "--- Copyable Content Blocks ---"
+    echo "--- Copyable Items ---" # Updated title
     for i in "${!copyable_items[@]}"; do
       local item_text="${copyable_items[i]}"
       local first_line
 
       # Get first line for display, add ellipsis if multi-line
-      first_line=$(echo "$item_text" | head -n 1)
-      if [[ $(echo "$item_text" | wc -l) -gt 1 ]]; then
-        first_line="$first_line [...]"
+      # Trim leading/trailing whitespace from the first line for cleaner display
+      first_line=$(echo "$item_text" | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      # Add ellipsis if multi-line OR if first line was trimmed (meaning original had more content/whitespace)
+      # Also check if item_text itself is different from the processed first_line
+      if [[ $(echo "$item_text" | wc -l) -gt 1 || "$item_text" != "$first_line" ]]; then
+          first_line="$first_line [...]"
       fi
-      printf "%d) %s\n" $((i + 1)) "$first_line"
+       # Ensure first_line is not empty before printing
+      if [ -n "$first_line" ]; then
+          printf "%d) %s\n" $((i + 1)) "$first_line"
+      else
+          # Handle case where block might contain only whitespace lines initially
+          printf "%d) %s\n" $((i + 1)) "[Empty or whitespace block ...]"
+      fi
     done
-    echo "--------------------------"
+    echo "--------------------" # Adjusted length
 
     local selection
     # Prompt user, allowing empty input for cancellation
