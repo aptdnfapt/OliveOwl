@@ -162,36 +162,9 @@ configure_settings() {
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
 SYSTEM_PROMPT="""You are a helpful AI assistant. Provide concise and clear answers. Use standard Markdown for formatting (lists, bold, italics, etc.).
-
-CRITICAL FORMATTING RULE FOR COPYABLE CONTENT:
-*   ALWAYS enclose any content intended for easy copying (like code snippets, shell commands, configuration examples, file contents, etc.) within EITHER triple quotes (\"\"\") OR triple backticks (\`\`\`).
-
-Examples of correct formatting for copyable content:
-
-Example 1: Shell commands (using triple quotes)
-\"\"\"
-ls
-cd
-mkdir
-\"\"\"
-
-Example 2: Python code (using triple backticks)
-\`\`\`python
-print("hello")
-\`\`\`
-
-Example 3: JSON data (using triple quotes)
-\"\"\"
-{
-  "user": "example",
-  "settings": {
-    "theme": "dark",
-    "notifications": true
-  }
-}
-\"\"\"
-
-IMPORTANT: Provide requested commands, code, or other copyable content directly using EITHER the triple quote format (\"\"\") OR the triple backtick format (\`\`\`) as shown above. Fulfill the user's request accurately."""
+also give out code / game code / user said markdown block / a scrpt / a code block / html / any programing code / commands / shell commands or any thing that user might need to copy and paste some where else in a code block in a way that is intact to copy and paste in a file or shell  so that it can be used  this is a must and shouldnt be niglagted.
+it contains ollama commands , docker commands , python or any other programing code , bash zsh fish etc shell script and commands , minecraft etc game commands , git commands , anything that can be pasted in shell and count as valid commands
+"""
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -343,7 +316,7 @@ start_new_session() {
     ;;
   "/history")
     select_and_load_history # This function handles messages and returns status
-    return $? # Return status (0 for success, 1 for fail/cancel)
+    return $?               # Return status (0 for success, 1 for fail/cancel)
     ;;
   *)
     # Treat anything else (name or blank) as a request for a new session
@@ -352,7 +325,6 @@ start_new_session() {
     ;;
   esac
 }
-
 
 # --- API Call Implementation ---
 # Takes user input, sends history + input to API, returns AI response text
@@ -478,58 +450,64 @@ call_api() {
 handle_command_copying() {
   local ai_response="$1"
   local line
-  local -a copyable_items=() # Array to store full code blocks
+  local -a copyable_items=()
   local in_block=0
   local current_block=""
 
-  # Use process substitution to read line by line, preserving whitespace
+  # Use process substitution to read line by line
   while IFS= read -r line || [[ -n "$line" ]]; do
-    # Check for triple quote OR triple backtick delimiters, allowing optional surrounding whitespace
-    if [[ "$line" =~ ^[[:space:]]*(\"\"\"|\`\`\`)[[:space:]]*$ ]]; then
-      if [[ $in_block -eq 0 ]]; then
-        # Entering a block
-        in_block=1
-        current_block="" # Start accumulating block content (excluding the delimiter)
-      else
-        # Exiting a block
-        in_block=0
-        # Store the accumulated block content.
-        # Using printf '%s' ensures no trailing newline is added if the block itself didn't end with one.
-        # Check if current_block is non-empty before adding.
-        if [ -n "$current_block" ]; then
-             copyable_items+=("$(printf '%s' "$current_block")")
-        fi
-        current_block=""
+    # Check for closing delimiter first (only if already in a block)
+    if [[ $in_block -eq 1 ]] && [[ "$line" =~ ^[[:space:]]*\`\`\`[[:space:]]*$ ]]; then
+      # Exiting a block
+      in_block=0
+      # Store the accumulated block content if non-empty
+      if [ -n "$current_block" ]; then
+        # Use printf '%s' to avoid adding an extra newline at the end
+        copyable_items+=("$(printf '%s' "$current_block")")
       fi
+      current_block="" # Reset for next potential block
+    # Check for opening delimiter (only if not already in a block)
+    # Allows optional language specifier (alphanumeric, _, -)
+    elif [[ $in_block -eq 0 ]] && [[ "$line" =~ ^[[:space:]]*\`\`\`[a-zA-Z0-9_-]*[[:space:]]*$ ]]; then
+      # Entering a block
+      in_block=1
+      current_block="" # Start accumulating (exclude delimiter line)
     # If inside a block, accumulate content
     elif [[ $in_block -eq 1 ]]; then
       # Append line to current block, handling the first line vs subsequent lines
       if [ -z "$current_block" ]; then
         current_block="$line"
       else
-        # Append with a newline
+        # Append with a newline separator
         current_block=$(printf '%s\n%s' "$current_block" "$line")
       fi
     fi
-  done < <(printf '%s\n' "$ai_response")
+  done < <(printf '%s\n' "$ai_response") # Feed the AI response line by line
 
-  # Note: We don't need to check for being left inside a block after the loop,
-  # as an unterminated block wouldn't be considered complete for copying.
+  # Note: Unterminated blocks (if the AI response ends mid-block) are ignored.
 
   local count=${#copyable_items[@]}
 
   # If items were found, prompt the user
   if [[ $count -gt 0 ]]; then
-    echo "--- Copyable Content Blocks ---"
+    echo "--- Copyable Code Blocks ---" # Changed title slightly
     for i in "${!copyable_items[@]}"; do
       local item_text="${copyable_items[i]}"
       local first_line
 
       # Get first line for display, add ellipsis if multi-line
       first_line=$(echo "$item_text" | head -n 1)
+      # Check if the block has more than one line
       if [[ $(echo "$item_text" | wc -l) -gt 1 ]]; then
-        first_line="$first_line [...]"
+        # Check if the first line is shorter than, say, 60 chars before adding ellipsis
+        if [[ ${#first_line} -lt 60 ]]; then
+          first_line="$first_line [...]"
+        else
+          # If the first line is long, show the first 60 chars + ellipsis
+          first_line="${first_line:0:60} [...]"
+        fi
       fi
+      # Ensure index starts from 1 for display
       printf "%d) %s\n" $((i + 1)) "$first_line"
     done
     echo "--------------------------"
@@ -544,6 +522,7 @@ handle_command_copying() {
       local final_content="${copyable_items[index]}"
 
       # Copy the exact block content to clipboard
+      # Use printf '%s' to avoid adding extra newline by echo
       printf '%s' "$final_content" | $CLIPBOARD_TOOL
       echo "Copied to clipboard!"
     # Check if input is empty or '0' for cancellation
@@ -552,6 +531,7 @@ handle_command_copying() {
     else
       echo "Invalid selection."
     fi
+  # If no blocks are found, simply don't show the prompt.
   fi
 }
 
@@ -572,9 +552,9 @@ main() {
   start_new_session # Prompt user for initial action (new, history, exit)
   start_status=$?
   if [ $start_status -ne 0 ]; then
-      # If /history was chosen but failed or was cancelled, start a default new session
-      echo "Falling back to new timestamped session."
-      create_new_session_file "" # Create default timestamped session
+    # If /history was chosen but failed or was cancelled, start a default new session
+    echo "Falling back to new timestamped session."
+    create_new_session_file "" # Create default timestamped session
   fi
   # If start_new_session exited or loaded history successfully, we proceed
 
@@ -594,11 +574,11 @@ main() {
       local new_status
       start_new_session
       new_status=$?
-       if [ $new_status -ne 0 ]; then
-          # If /history was chosen but failed or was cancelled, start a default new session
-          echo "Falling back to new timestamped session."
-          create_new_session_file "" # Create default timestamped session
-       fi
+      if [ $new_status -ne 0 ]; then
+        # If /history was chosen but failed or was cancelled, start a default new session
+        echo "Falling back to new timestamped session."
+        create_new_session_file "" # Create default timestamped session
+      fi
       continue # Skip API call for this turn
       ;;
     "/history")
@@ -620,11 +600,11 @@ main() {
       local config_status
       start_new_session
       config_status=$?
-       if [ $config_status -ne 0 ]; then
-          # If /history was chosen but failed or was cancelled, start a default new session
-          echo "Falling back to new timestamped session."
-          create_new_session_file "" # Create default timestamped session
-       fi
+      if [ $config_status -ne 0 ]; then
+        # If /history was chosen but failed or was cancelled, start a default new session
+        echo "Falling back to new timestamped session."
+        create_new_session_file "" # Create default timestamped session
+      fi
       continue
       ;;
 
