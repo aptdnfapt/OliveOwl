@@ -122,8 +122,8 @@ configure_settings() {
       echo "Error: GEMINI_API_KEY not set in $ENV_FILE." >&2
       exit 1
     fi
-    # Hardcoded list for Gemini (adjust as needed)
-    model_list="gemini-1.5-flash-latest\ngemini-1.5-pro-latest\ngemini-pro"
+    # Updated hardcoded list for Gemini
+    model_list="gemini-2.5-pro-exp-03-25\ngemini-2.0-flash\ngemini-2.0-pro-exp-02-05\ngemini-2.0-flash-lite\ngemini-2.0-flash-thinking-exp-01-21\ngemini-1.5-flash\ngemini-1.5-pro\ngemini-1.0-pro-vision\ngemini-1.0-pro\ngemma-3-27b-it\ngemini-2.0-flash-thinking-exp-1219"
     ;;
   "OpenRouter")
     # Check for OpenRouter Key
@@ -131,11 +131,9 @@ configure_settings() {
       echo "Error: OPENROUTER_API_KEY not set in $ENV_FILE." >&2
       exit 1
     fi
-    model_list=$(fetch_openrouter_models)
-    if [ $? -ne 0 ] || [ -z "$model_list" ]; then
-      echo "Could not get OpenRouter models. Exiting." >&2
-      exit 1
-    fi
+    # Updated hardcoded list for OpenRouter
+    model_list="meta-llama/llama-4-maverick:free\nmeta-llama/llama-4-scout:free\ndeepseek/deepseek-chat-v3-0324:free\nmeta-llama/llama-3.2-1b-instruct:free\nqwen/qwen2.5-vl-32b-instruct:free\nopen-r1/olympiccoder-32b:free\nqwen/qwq-32b:free\ndeepseek/deepseek-chat-v3-0324:free\ngoogle/gemini-2.0-pro-exp-02-05:free\ndeepseek/deepseek-v3:free\ndeepseek/deepseek-r1:free\ndeepseek/deepseek-r1-distill-llama-70b\ndeepseek/deepseek-r1-distill-qwen-32b\ndeepseek/deepseek-r1-distill-qwen-14b\ndeepseek/deepseek-r1-distill-llama-8b\ndeepseek/deepseek-r1-distill-qwen-1.5b\ndeepseek/deepseek-r1-zero:free\nmistralai/mixtral-8x7b-instruct\nmeta-llama/llama-3-8b-instruct"
+    # Note: Removed dynamic fetching via fetch_openrouter_models
     ;;
   *)
     echo "Invalid provider selected."
@@ -163,10 +161,37 @@ configure_settings() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="You are a helpful AI assistant. Provide concise and clear answers. Use Markdown for formatting explanations (lists, bold, etc.).
-CRITICAL FORMATTING RULES FOR COPYABLE CONTENT:
-1. For any code / unix commands / python or any other programing commands or code / game commands above everyhing contents that may or may not important tho maybe be used to copy and paste somewhere else . put this kinds of content in tripple quotes 
-IMPORTANT: Provide requested commands or code snippets directly using the correct format above, even if they are not Linux shell commands. Fulfill the user's request for the code/command itself when asked."
+SYSTEM_PROMPT="""You are a helpful AI assistant. Provide concise and clear answers. Use standard Markdown for formatting (lists, bold, italics, etc.).
+
+CRITICAL FORMATTING RULE FOR COPYABLE CONTENT:
+*   ALWAYS enclose any content intended for easy copying (like code snippets, shell commands, configuration examples, file contents, etc.) within EITHER triple quotes (\"\"\") OR triple backticks (\`\`\`).
+
+Examples of correct formatting for copyable content:
+
+Example 1: Shell commands (using triple quotes)
+\"\"\"
+ls
+cd
+mkdir
+\"\"\"
+
+Example 2: Python code (using triple backticks)
+\`\`\`python
+print("hello")
+\`\`\`
+
+Example 3: JSON data (using triple quotes)
+\"\"\"
+{
+  "user": "example",
+  "settings": {
+    "theme": "dark",
+    "notifications": true
+  }
+}
+\"\"\"
+
+IMPORTANT: Provide requested commands, code, or other copyable content directly using EITHER the triple quote format (\"\"\") OR the triple backtick format (\`\`\`) as shown above. Fulfill the user's request accurately."""
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -459,18 +484,20 @@ handle_command_copying() {
 
   # Use process substitution to read line by line, preserving whitespace
   while IFS= read -r line || [[ -n "$line" ]]; do
-    # Check for code block fences
-    if [[ "$line" =~ ^\`\`\` ]]; then
+    # Check for triple quote OR triple backtick delimiters, allowing optional surrounding whitespace
+    if [[ "$line" =~ ^[[:space:]]*(\"\"\"|\`\`\`)[[:space:]]*$ ]]; then
       if [[ $in_block -eq 0 ]]; then
         # Entering a block
         in_block=1
-        current_block="" # Start accumulating block content (excluding the fence)
+        current_block="" # Start accumulating block content (excluding the delimiter)
       else
         # Exiting a block
         in_block=0
+        # Store the accumulated block content.
+        # Using printf '%s' ensures no trailing newline is added if the block itself didn't end with one.
+        # Check if current_block is non-empty before adding.
         if [ -n "$current_block" ]; then
-          # Store the accumulated block content
-          copyable_items+=("$current_block")
+             copyable_items+=("$(printf '%s' "$current_block")")
         fi
         current_block=""
       fi
@@ -493,7 +520,7 @@ handle_command_copying() {
 
   # If items were found, prompt the user
   if [[ $count -gt 0 ]]; then
-    echo "--- Copyable Code Blocks ---"
+    echo "--- Copyable Content Blocks ---"
     for i in "${!copyable_items[@]}"; do
       local item_text="${copyable_items[i]}"
       local first_line
