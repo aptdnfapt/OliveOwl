@@ -176,10 +176,8 @@ CURRENT_HISTORY_FILE=""
 create_api_message_json() {
   local role="$1"
   local content="$2"
-  local json_content
-
-  # Escape special characters for JSON
-  json_content=$(echo "$content" | jq -Rsa .) # Encodes string safely
+  # Content is passed directly, assuming it doesn't need pre-escaping for jq --arg
+  # json_content=$(echo "$content" | jq -Rsa .) # REMOVED
 
   if [[ "$API_PROVIDER" == "Gemini" ]]; then
     # Gemini uses "user" and "model" roles, and a "parts" array
@@ -188,16 +186,18 @@ create_api_message_json() {
     if [[ "$role" == "assistant" ]]; then
       gemini_role="model"
     fi
-    # Simple text part for now
-    jq -n --arg role "$gemini_role" --argjson text_part "{\"text\": $json_content}" \
-      '{role: $role, parts: [$text_part]}' | jq -c .
+    # Simple text part for now - Pass content directly to --arg text_content
+    # jq needs the value for "text" to be a valid JSON string. Let jq handle the encoding.
+    jq -n --arg role "$gemini_role" --arg text_content "$content" \
+      '{role: $role, parts: [{"text": $text_content}]}' | jq -c .
   else # OpenRouter uses "user" and "assistant"
     local openrouter_role="$role"
     # Map Gemini's 'model' role if needed (though we primarily use 'assistant' for OpenRouter AI responses)
     if [[ "$role" == "model" ]]; then
       openrouter_role="assistant"
     fi
-    jq -n --arg role "$openrouter_role" --arg content "$json_content" \
+    # Pass content directly to --arg content
+    jq -n --arg role "$openrouter_role" --arg content "$content" \
       '{role: $role, content: $content}' | jq -c .
   fi
 }
@@ -239,16 +239,24 @@ display_history() {
 
     # Parse the inner message_json to get role and content
     role=$(echo "$message_json" | jq -r '.role')
-    content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
+    # Extract the raw content string
+    content_raw=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
+
+    # Attempt to remove potential surrounding quotes added during storage/retrieval
+    content_trimmed="${content_raw#\"}" # Remove leading quote if present
+    content_trimmed="${content_trimmed%\"}" # Remove trailing quote if present
 
     if [[ "$role" == "user" ]]; then
-      echo -e "\n\e[34mYou:\e[0m $content" # Blue for user
+      # Use printf %b on the potentially trimmed content to interpret escapes
+      echo -e "\n\e[34mYou:\e[0m" # Print prompt first
+      printf '%b' "$content_trimmed" # Print content, interpreting escapes
+      echo # Add a newline after user content
     elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
       # Use the specific model_used if available, otherwise fall back to the current $MODEL
       display_model_name="${model_used:-$MODEL}"
       echo -e "\n\e[32mAI ($display_model_name):\e[0m" # Green for AI, showing specific model
-      # Use bat for markdown rendering of AI response
-      echo "$content" | bat --language md --paging=never --style=plain --color=always
+      # Use printf '%b' on the potentially trimmed content before piping to bat
+      printf '%b' "$content_trimmed" | bat --language md --paging=never --style=plain --color=always
     # Handle potential 'system' role if it ever gets stored/displayed (currently shouldn't)
     # elif [[ "$role" == "system" ]]; then
     #   echo -e "\n\e[35mSystem:\e[0m $content" # Magenta for system
@@ -290,9 +298,15 @@ save_history() {
     echo "Error: No history file set for saving." >&2
     return 1
   fi
-  # Convert the bash array of JSON strings into a single JSON array string
-  printf "%s\n" "${CHAT_HISTORY[@]}" | jq -s '.' >"$CURRENT_HISTORY_FILE"
-  # echo "History saved to: $CURRENT_HISTORY_FILE" # Optional: for debugging
+  # Convert the bash array of JSON strings into a single JSON array string and save
+  if printf "%s\n" "${CHAT_HISTORY[@]}" | jq -s '.' >"$CURRENT_HISTORY_FILE"; then
+    # Optional: echo "History saved successfully to: $CURRENT_HISTORY_FILE" >&2
+    : # No-op, command succeeded
+  else
+    echo "Error: Failed to save history to $CURRENT_HISTORY_FILE" >&2
+    # Decide if we should return an error code? For now, just print error.
+    return 1 # Indicate save failure
+  fi
 }
 
 # Function to create the actual new session file
@@ -650,6 +664,10 @@ main() {
     local user_history_item=$(jq -n --argjson msg "$user_api_json" --arg model "" \
                               '{message_json: $msg, model_used: $model}' | jq -c .)
     CHAT_HISTORY+=("$user_history_item")
+    # Save history immediately after adding user message
+    if ! save_history; then
+        echo "Warning: Failed to save history after user input." >&2
+    fi
 
     # Call the API
     local ai_response
@@ -678,14 +696,22 @@ main() {
     CHAT_HISTORY+=("$ai_history_item")
 
     # Save history after successful call
-    save_history
+    # Save history *after* adding the AI response
+    if ! save_history; then
+      # Handle save error if needed, maybe just continue
+      echo "Warning: Failed to save history after AI response." >&2
+    fi
 
-    # Display AI response using bat
+    # Interpret the raw AI response first
+    local interpreted_response
+    interpreted_response=$(printf '%b' "$ai_response")
+
+    # Display interpreted AI response using bat
     echo -e "\n\e[32mAI ($MODEL):\e[0m" # Green for AI
-    echo "$ai_response" | bat --language md --paging=never --style=plain --color=always
+    echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
 
-    # Handle command copying
-    handle_command_copying "$ai_response"
+    # Handle command copying using the interpreted response
+    handle_command_copying "$interpreted_response"
 
   done
 }
