@@ -38,7 +38,7 @@ check_dependency "jq"
 check_dependency "fzf"
 check_dependency "bat"
 check_dependency "gum" # Added gum dependency check
-check_clipboard_tool # Sets $CLIPBOARD_TOOL
+check_clipboard_tool   # Sets $CLIPBOARD_TOOL
 
 # --- Initial Setup ---
 setup_config() {
@@ -215,9 +215,9 @@ load_history() {
   # Store each object string as an element in the CHAT_HISTORY bash array.
   mapfile -t CHAT_HISTORY < <(jq -c '.[]' "$file_path")
   if [ $? -ne 0 ]; then
-      echo "Error: Failed to parse history file: $file_path" >&2
-      CHAT_HISTORY=() # Clear history on parse error
-      return 1
+    echo "Error: Failed to parse history file: $file_path" >&2
+    CHAT_HISTORY=() # Clear history on parse error
+    return 1
   fi
   CURRENT_HISTORY_FILE="$file_path"
   echo "Loaded history from: $CURRENT_HISTORY_FILE"
@@ -234,8 +234,8 @@ display_history() {
     model_used=$(echo "$history_item_json" | jq -r '.model_used // empty') # Will be empty for user messages
 
     if [ -z "$message_json" ]; then
-        echo "Warning: Skipping invalid history item." >&2
-        continue
+      echo "Warning: Skipping invalid history item." >&2
+      continue
     fi
 
     # Parse the inner message_json to get role and content
@@ -370,31 +370,31 @@ call_api() {
   # 1. Prepare payload: Convert history messages to the format required by the CURRENT API provider
   local converted_messages=()
   for history_item_json in "${CHAT_HISTORY[@]}"; do
-      # Extract the raw message_json string from the wrapper object string
-      local original_msg_json=$(echo "$history_item_json" | jq -r '.message_json // empty')
-      if [ -z "$original_msg_json" ]; then
-          echo "Warning: Skipping empty message_json in history item." >&2
-          continue
-      fi
+    # Extract the raw message_json string from the wrapper object string
+    local original_msg_json=$(echo "$history_item_json" | jq -r '.message_json // empty')
+    if [ -z "$original_msg_json" ]; then
+      echo "Warning: Skipping empty message_json in history item." >&2
+      continue
+    fi
 
-      # Parse the original message to get role and content, regardless of format
-      local original_role original_content
-      original_role=$(echo "$original_msg_json" | jq -r '.role')
-      # Try extracting from Gemini format first, then OpenRouter format
-      original_content=$(echo "$original_msg_json" | jq -r 'if .parts then .parts[0].text else .content end // empty')
+    # Parse the original message to get role and content, regardless of format
+    local original_role original_content
+    original_role=$(echo "$original_msg_json" | jq -r '.role')
+    # Try extracting from Gemini format first, then OpenRouter format
+    original_content=$(echo "$original_msg_json" | jq -r 'if .parts then .parts[0].text else .content end // empty')
 
-      if [ -z "$original_role" ] || [ -z "$original_content" ]; then
-          echo "Warning: Skipping history item with missing role or content: $original_msg_json" >&2
-          continue
-      fi
+    if [ -z "$original_role" ] || [ -z "$original_content" ]; then
+      echo "Warning: Skipping history item with missing role or content: $original_msg_json" >&2
+      continue
+    fi
 
-      # Convert the extracted role/content to the format needed by the CURRENT provider
-      local converted_msg_json=$(create_api_message_json "$original_role" "$original_content")
-      if [ -n "$converted_msg_json" ]; then
-          converted_messages+=("$converted_msg_json")
-      else
-          echo "Warning: Failed to convert history message: $original_msg_json" >&2
-      fi
+    # Convert the extracted role/content to the format needed by the CURRENT provider
+    local converted_msg_json=$(create_api_message_json "$original_role" "$original_content")
+    if [ -n "$converted_msg_json" ]; then
+      converted_messages+=("$converted_msg_json")
+    else
+      echo "Warning: Failed to convert history message: $original_msg_json" >&2
+    fi
   done
   # Combine the *converted* message JSON strings into a single JSON array string for the API
   local history_json_array=$(printf "%s\n" "${converted_messages[@]}" | jq -s '.')
@@ -509,14 +509,16 @@ call_api() {
 }
 
 # --- Command Copying ---
+# --- Command Copying ---
 handle_command_copying() {
   local ai_response="$1"
   local line
-  local -a copyable_items=()
+  local -a copyable_items=() # Stores the full content of each block
+  local -a preview_items=()  # Stores the preview text for gum choose
   local in_block=0
   local current_block=""
 
-  # Use process substitution to read line by line
+  # Use process substitution to read line by line to extract blocks
   while IFS= read -r line || [[ -n "$line" ]]; do
     # Check for closing delimiter first (only if already in a block)
     if [[ $in_block -eq 1 ]] && [[ "$line" =~ ^[[:space:]]*\`\`\`[[:space:]]*$ ]]; then
@@ -525,7 +527,28 @@ handle_command_copying() {
       # Store the accumulated block content if non-empty
       if [ -n "$current_block" ]; then
         # Use printf '%s' to avoid adding an extra newline at the end
-        copyable_items+=("$(printf '%s' "$current_block")")
+        local full_block_content
+        full_block_content=$(printf '%s' "$current_block")
+        copyable_items+=("$full_block_content")
+
+        # --- Create the preview for gum choose ---
+        local first_line
+        # Get first line for display, add ellipsis if multi-line
+        first_line=$(echo "$full_block_content" | head -n 1)
+        # Check if the block has more than one line
+        if [[ $(echo "$full_block_content" | wc -l) -gt 1 ]]; then
+          # Check if the first line is shorter than, say, 60 chars before adding ellipsis
+          if [[ ${#first_line} -lt 60 ]]; then
+            first_line="$first_line [...]"
+          else
+            # If the first line is long, show the first 60 chars + ellipsis
+            first_line="${first_line:0:60} [...]"
+          fi
+        fi
+        # Add the formatted first line to the preview list
+        preview_items+=("$first_line")
+        # --- End preview creation ---
+
       fi
       current_block="" # Reset for next potential block
     # Check for opening delimiter (only if not already in a block)
@@ -550,48 +573,48 @@ handle_command_copying() {
 
   local count=${#copyable_items[@]}
 
-  # If items were found, prompt the user
+  # If items were found, prompt the user using gum choose
   if [[ $count -gt 0 ]]; then
-    echo "--- Copyable Code Blocks ---" # Changed title slightly
-    for i in "${!copyable_items[@]}"; do
-      local item_text="${copyable_items[i]}"
-      local first_line
+    local gum_options=""
+    local selected_option
+    local cancel_option="-- CANCEL --" # Explicit cancel option text
 
-      # Get first line for display, add ellipsis if multi-line
-      first_line=$(echo "$item_text" | head -n 1)
-      # Check if the block has more than one line
-      if [[ $(echo "$item_text" | wc -l) -gt 1 ]]; then
-        # Check if the first line is shorter than, say, 60 chars before adding ellipsis
-        if [[ ${#first_line} -lt 60 ]]; then
-          first_line="$first_line [...]"
-        else
-          # If the first line is long, show the first 60 chars + ellipsis
-          first_line="${first_line:0:60} [...]"
-        fi
-      fi
-      # Ensure index starts from 1 for display
-      printf "%d) %s\n" $((i + 1)) "$first_line"
+    # Prepare options for gum choose (previews + Cancel)
+    for preview in "${preview_items[@]}"; do
+      gum_options+="$preview\n"
     done
-    echo "--------------------------"
+    gum_options+="$cancel_option" # Add the cancel option at the end
 
-    local selection
-    # Prompt user, allowing empty input for cancellation
-    read -p "Enter number to copy (1-$count), or press Enter/0 to cancel: " selection
+    # Use gum choose to let the user select
+    # Capture selection; handle cancellation (Ctrl+C/Esc returns non-zero)
+    selected_option=$(printf "%b" "$gum_options" | gum choose --header "Select code block to copy:" --height "$((count + 2))") # Adjust height as needed
+    local gum_status=$?                                                                                                        # Capture gum exit status
 
-    # Validate input: Check if it's a valid number within the range
-    if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$count" ]; then
-      local index=$((selection - 1))
-      local final_content="${copyable_items[index]}"
-
-      # Copy the exact block content to clipboard
-      # Use printf '%s' to avoid adding extra newline by echo
-      printf '%s' "$final_content" | $CLIPBOARD_TOOL
-      echo "Copied to clipboard!"
-    # Check if input is empty or '0' for cancellation
-    elif [ -z "$selection" ] || [[ "$selection" == "0" ]]; then
-      echo "Copy cancelled."
+    # Check if gum was cancelled or if the user selected Cancel
+    if [[ $gum_status -ne 0 ]] || [[ "$selected_option" == "$cancel_option" ]] || [[ -z "$selected_option" ]]; then
+      gum style "Coppy cancelled" --foreground "#FF0000" --bold
     else
-      echo "Invalid selection."
+      # Find the index corresponding to the selected preview
+      local selected_index=-1
+      for i in "${!preview_items[@]}"; do
+        if [[ "${preview_items[i]}" == "$selected_option" ]]; then
+          selected_index=$i
+          break
+        fi
+      done
+
+      # If we found a valid index, copy the corresponding full block
+      if [[ $selected_index -ne -1 ]]; then
+        local final_content="${copyable_items[selected_index]}"
+        # Copy the exact block content to clipboard
+        # Use printf '%s' to avoid adding extra newline by echo
+        printf '%s' "$final_content" | $CLIPBOARD_TOOL
+        gum style "Copied '$selected_option' to clipboard!" --foreground "#00FF00" --bold
+
+      else
+        # This shouldn't happen if gum choose worked correctly, but good to have a fallback
+        echo "Error: Could not match selection. Copy failed."
+      fi
     fi
   # If no blocks are found, simply don't show the prompt.
   fi
@@ -632,10 +655,10 @@ main() {
     # Capture output into user_input variable.
     # Check exit status to handle cancellation (e.g., Ctrl+C in gum write).
     if ! user_input=$(gum write --placeholder "Enter your prompt (Ctrl+D or Esc to finish)..."); then
-       # gum write was cancelled (e.g., Ctrl+C)
-       echo "Input cancelled."
-       # Decide how to handle cancellation - exit or continue loop? Let's continue.
-       continue
+      # gum write was cancelled (e.g., Ctrl+C)
+      echo "Input cancelled."
+      # Decide how to handle cancellation - exit or continue loop? Let's continue.
+      continue
     fi
     # --- End of gum write input ---
 
@@ -643,10 +666,9 @@ main() {
     # Also remove placeholder if user exits without typing (gum write might return the placeholder)
     local placeholder="Enter your prompt (Ctrl+D or Esc to finish)..."
     if [[ "$user_input" == "$placeholder" ]]; then
-        user_input=""
+      user_input=""
     fi
     user_input=$(echo "$user_input" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
 
     # Handle commands (check the input captured from gum)
     # Commands must be the entire input now, not just the first line.
@@ -699,7 +721,7 @@ main() {
       continue
       ;;
 
-    "") # Handle empty input
+    "")                    # Handle empty input
       is_command_handled=1 # Treat empty input like a command (skip API call)
       continue
       ;;
@@ -707,27 +729,26 @@ main() {
 
     # If input was not a command and not empty, print it back before API call
     if [[ $is_command_handled -eq 0 ]] && [ -n "$user_input" ]; then
-       # The "You:" prompt was already printed before gum write.
-       # Just print the captured input. Use printf to handle potential special chars.
-       printf '%s\n' "$user_input"
+      # The "You:" prompt was already printed before gum write.
+      # Just print the captured input. Use printf to handle potential special chars.
+      printf '%s\n' "$user_input"
     fi
 
     # Add user message to history (as a wrapper object string)
     # Only add non-empty, non-command input to history
     if [[ $is_command_handled -eq 0 ]] && [ -n "$user_input" ]; then
-       local user_api_json=$(create_api_message_json "user" "$user_input")
-       local user_history_item=$(jq -n --argjson msg "$user_api_json" --arg model "" \
-                                 '{message_json: $msg, model_used: $model}' | jq -c .)
-       CHAT_HISTORY+=("$user_history_item")
-       # Save history immediately after adding user message
-       if ! save_history; then
-         echo "Warning: Failed to save history after user input." >&2
-       fi
+      local user_api_json=$(create_api_message_json "user" "$user_input")
+      local user_history_item=$(jq -n --argjson msg "$user_api_json" --arg model "" \
+        '{message_json: $msg, model_used: $model}' | jq -c .)
+      CHAT_HISTORY+=("$user_history_item")
+      # Save history immediately after adding user message
+      if ! save_history; then
+        echo "Warning: Failed to save history after user input." >&2
+      fi
     # Skip API call if it was a command or empty input
     else
-       continue
+      continue
     fi
-
 
     # Call the API
     local ai_response
@@ -752,7 +773,7 @@ main() {
     # Add AI response to history (as a wrapper object string)
     local ai_api_json=$(create_api_message_json "$response_role" "$ai_response")
     local ai_history_item=$(jq -n --argjson msg "$ai_api_json" --arg model "$MODEL" \
-                            '{message_json: $msg, model_used: $model}' | jq -c .)
+      '{message_json: $msg, model_used: $model}' | jq -c .)
     CHAT_HISTORY+=("$ai_history_item")
 
     # Save history after successful call

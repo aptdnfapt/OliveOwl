@@ -47,6 +47,8 @@ sudo dnf install -y curl jq fzf bat gum xclip # or wl-clipboard for wl-copy
 ```
 For other systems (like Arch, macOS with Homebrew, or manual install), see the [Gum installation guide](https://github.com/charmbracelet/gum#installation).
 
+**Important:** It's recommended to use the latest version of `gum` available from the official Charm repository (as shown above) or other official installation methods. Older versions might have bugs (e.g., issues with multi-line input handling). Ensure your package manager is configured to pull the latest version from the Charm source if applicable.
+
 *Note: `bat` might be called `batcat` on some systems (like Debian/Ubuntu). If so, you might need to create a symlink `sudo ln -s /usr/bin/batcat /usr/local/bin/bat` or adjust the script.*
 
 ## Installation
