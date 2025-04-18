@@ -37,6 +37,7 @@ check_dependency "curl"
 check_dependency "jq"
 check_dependency "fzf"
 check_dependency "bat"
+check_dependency "gum" # Added gum dependency check
 check_clipboard_tool # Sets $CLIPBOARD_TOOL
 
 # --- Initial Setup ---
@@ -621,85 +622,43 @@ main() {
 
   # Main loop
   while true; do
-    # --- Read potentially multi-line user input ---
-    local first_line=""
+    # --- Read user input using gum write ---
     local user_input=""
-    local line_count=0
+    # Display prompt manually before calling gum
+    printf '\n\e[34mYou:\e[0m\n' # Print "You:" prompt on its own line
 
-    # Read the first line with the main prompt
-    read -e -p $'\n\e[34mYou:\e[0m ' first_line
-    line_count=$((line_count + 1))
-
-    # Check if the first line is a command
-    is_command=0
-    if [[ "$first_line" == /* ]]; then
-       # Check against known commands
-       case "$first_line" in
-         "/exit"|"/new"|"/history"|"/config")
-           is_command=1
-           user_input="$first_line" # Treat the command as the full input
-           ;;
-         *)
-           # Not a known command, treat as regular input
-           user_input="$first_line"
-           ;;
-       esac
-    else
-       # Not a command, start accumulating
-       user_input="$first_line"
+    # Use gum write to capture multi-line input.
+    # Set a placeholder to encourage input.
+    # Capture output into user_input variable.
+    # Check exit status to handle cancellation (e.g., Ctrl+C in gum write).
+    if ! user_input=$(gum write --placeholder "Enter your prompt (Ctrl+D or Esc to finish)..."); then
+       # gum write was cancelled (e.g., Ctrl+C)
+       echo "Input cancelled."
+       # Decide how to handle cancellation - exit or continue loop? Let's continue.
+       continue
     fi
+    # --- End of gum write input ---
 
-    # Always enter loop to read subsequent lines, unless it was a command.
-    # This makes behavior consistent for typing vs pasting.
-    # User signals end of input by pressing Enter on an empty line.
-    # NOTE: Pasting multi-line text might require pressing Enter once after pasting
-    #       (to process the first line and potentially more depending on terminal),
-    #       and then Enter again on the empty '...' prompt to submit the full input.
-    if [[ $is_command -eq 0 ]]; then
-      # Loop to read subsequent lines.
-      while true; do
-        local continuation_prompt="..."
-        # Only show prompt if terminal is interactive (avoids prompt if input is piped)
-        if [[ -t 0 ]]; then
-           printf "%s " "$continuation_prompt"
-        fi
-
-        # Use read -r. Exit loop if read fails OR if the line read is empty.
-        if read -r next_line; then
-          if [ -z "$next_line" ]; then
-            # Empty line entered, signifies end of input
-            break
-          else
-            # Append the non-empty line. Handle the case where user_input might have been empty initially (if first_line was empty).
-            if [ -z "$user_input" ]; then
-               user_input="$next_line"
-            else
-               user_input=$(printf "%s\n%s" "$user_input" "$next_line")
-            fi
-            line_count=$((line_count + 1)) # Increment line count for non-empty subsequent lines
-          fi
-        else
-          # read failed (e.g., EOF from paste without trailing newline, or other error)
-          break
-        fi
-      done
-      # Adjust line count if the first line was empty but subsequent lines were added
-      if [[ "$first_line" == "" && $line_count -gt 0 ]]; then
-          line_count=$((line_count + 1)) # Account for the initial empty line if others followed
-      elif [[ "$first_line" != "" && $line_count == 0 ]]; then
-          line_count=1 # Ensure single line input has count 1
-      fi
-
+    # Trim leading/trailing whitespace (optional, but often helpful)
+    # Also remove placeholder if user exits without typing (gum write might return the placeholder)
+    local placeholder="Enter your prompt (Ctrl+D or Esc to finish)..."
+    if [[ "$user_input" == "$placeholder" ]]; then
+        user_input=""
     fi
-    # --- End of multi-line input reading ---
+    user_input=$(echo "$user_input" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
-    # Handle commands (now checking the potentially multi-line user_input, but commands are single-line)
+
+    # Handle commands (check the input captured from gum)
+    # Commands must be the entire input now, not just the first line.
+    local is_command_handled=0 # Flag to check if a command was processed
     case "$user_input" in
     "/exit")
+      is_command_handled=1
       echo "Exiting AI Help."
       break
       ;;
     "/new")
+      is_command_handled=1
       # Prompt again for new session name, history load, or exit
       local new_status
       start_new_session
@@ -712,11 +671,13 @@ main() {
       continue # Skip API call for this turn
       ;;
     "/history")
+      is_command_handled=1
       # Just attempt to load history, don't change session if cancelled
       select_and_load_history
       continue # Skip API call for this turn
       ;;
     "/config")
+      is_command_handled=1
       echo "Switching to config..."
       configure_settings # Re-run config
       # Re-source config in case it changed
@@ -739,19 +700,34 @@ main() {
       ;;
 
     "") # Handle empty input
+      is_command_handled=1 # Treat empty input like a command (skip API call)
       continue
       ;;
     esac
 
-    # Add user message to history (as a wrapper object string)
-    local user_api_json=$(create_api_message_json "user" "$user_input")
-    local user_history_item=$(jq -n --argjson msg "$user_api_json" --arg model "" \
-                              '{message_json: $msg, model_used: $model}' | jq -c .)
-    CHAT_HISTORY+=("$user_history_item")
-    # Save history immediately after adding user message
-    if ! save_history; then
-        echo "Warning: Failed to save history after user input." >&2
+    # If input was not a command and not empty, print it back before API call
+    if [[ $is_command_handled -eq 0 ]] && [ -n "$user_input" ]; then
+       # The "You:" prompt was already printed before gum write.
+       # Just print the captured input. Use printf to handle potential special chars.
+       printf '%s\n' "$user_input"
     fi
+
+    # Add user message to history (as a wrapper object string)
+    # Only add non-empty, non-command input to history
+    if [[ $is_command_handled -eq 0 ]] && [ -n "$user_input" ]; then
+       local user_api_json=$(create_api_message_json "user" "$user_input")
+       local user_history_item=$(jq -n --argjson msg "$user_api_json" --arg model "" \
+                                 '{message_json: $msg, model_used: $model}' | jq -c .)
+       CHAT_HISTORY+=("$user_history_item")
+       # Save history immediately after adding user message
+       if ! save_history; then
+         echo "Warning: Failed to save history after user input." >&2
+       fi
+    # Skip API call if it was a command or empty input
+    else
+       continue
+    fi
+
 
     # Call the API
     local ai_response

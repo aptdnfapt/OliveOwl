@@ -6,4 +6,6 @@
 6. OR works no /history errors (done)
 7. OR models and Gemini cross uses /history (done)
 8. copy func working again.. (done)
-9. 
+9. multi liner paste fixed also on a git commit branch (done)
+10. gum rewrite to replace input taking using read (done)
+11. gum rewrite to replace copy selection 

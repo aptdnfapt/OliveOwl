@@ -22,17 +22,31 @@ You need the following command-line tools installed:
 *   `jq` (for parsing JSON responses)
 *   `fzf` (for fuzzy finding/selection menus)
 *   `bat` (for syntax highlighting/Markdown rendering)
+*   `gum` (for multi-line input editing)
 *   A clipboard tool: `xclip` (for X11) or `wl-copy` (for Wayland)
 
 Install them using your system's package manager. For example, on Debian/Ubuntu:
 ```bash
-sudo apt update
-sudo apt install curl jq fzf bat xclip # or wl-clipboard for wl-copy
+# Ensure apt can use HTTPS repositories and install GPG key
+sudo apt update && sudo apt install -y apt-transport-https curl gpg
+# Add Charm repo GPG key
+curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/charm.gpg
+# Add Charm repo to sources
+echo "deb [signed-by=/etc/apt/trusted.gpg.d/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+# Install dependencies
+sudo apt update && sudo apt install -y curl jq fzf bat gum xclip # or wl-clipboard for wl-copy
 ```
 On Fedora:
 ```bash
-sudo dnf install curl jq fzf bat xclip # or wl-clipboard for wl-copy
+# Add Charm repo GPG key
+sudo rpm --import https://repo.charm.sh/yum/gpg.key
+# Add Charm repo
+sudo dnf config-manager --add-repo https://repo.charm.sh/yum/charm.repo
+# Install dependencies
+sudo dnf install -y curl jq fzf bat gum xclip # or wl-clipboard for wl-copy
 ```
+For other systems (like Arch, macOS with Homebrew, or manual install), see the [Gum installation guide](https://github.com/charmbracelet/gum#installation).
+
 *Note: `bat` might be called `batcat` on some systems (like Debian/Ubuntu). If so, you might need to create a symlink `sudo ln -s /usr/bin/batcat /usr/local/bin/bat` or adjust the script.*
 
 ## Installation
@@ -85,10 +99,12 @@ The script will start a new chat session and prompt you for an optional name.
 *   `/history`: Use `fzf` to select and load a previous chat session.
 *   `/config`: Re-run the API provider and model selection.
 
-**Multi-line Input:**
+**User Input:**
 
-*   **Typing:** Enter your first line at the `You:` prompt. If you need more lines, you'll see a `... ` prompt. Continue typing lines, pressing Enter after each. When finished, press Enter on an empty line at the `... ` prompt to submit the full input.
-*   **Pasting:** Paste your multi-line text at the `You:` prompt. After pasting, press Enter once. You will likely see the `... ` prompt again. Press Enter again (on the empty line) to submit the complete pasted text.
+When prompted with `You:`, the script will open a minimal text editor using `gum write`.
+*   Type your message directly in the editor. Multi-line input and pasting work naturally here.
+*   Press `Ctrl+D` or `Esc` (depending on the editor mode) to finish and submit your input.
+*   Press `Ctrl+C` to cancel input.
 
 **Code Block Copying:**
 
