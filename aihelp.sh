@@ -586,9 +586,10 @@ handle_command_copying() {
     local selected_option
     local cancel_option="-- CANCEL --" # Explicit cancel option text
 
-    # Prepare options for gum choose (previews + Cancel)
-    for preview in "${preview_items[@]}"; do
-      gum_options+="$preview\n"
+    # Prepare options for gum choose (previews + Cancel), prepending index
+    for i in "${!preview_items[@]}"; do
+      # Prepend index and delimiter to the preview text
+      gum_options+="$i: ${preview_items[i]}\n"
     done
     gum_options+="$cancel_option" # Add the cancel option at the end
 
@@ -600,32 +601,33 @@ handle_command_copying() {
     # Check if gum was cancelled or if the user selected Cancel
     if [[ $gum_status -ne 0 ]] || [[ "$selected_option" == "$cancel_option" ]] || [[ -z "$selected_option" ]]; then
       echo ""
-      gum style "Coppy cancelled" --foreground "#FF0000" --bold
+      gum style "Copy cancelled" --foreground "#FF0000" --bold
       echo ""
 
     else
-      # Find the index corresponding to the selected preview
+      # Extract the index from the beginning of the selected option string (e.g., "0: ...")
+      local selected_index_str=$(echo "$selected_option" | cut -d':' -f1)
       local selected_index=-1
-      for i in "${!preview_items[@]}"; do
-        if [[ "${preview_items[i]}" == "$selected_option" ]]; then
-          selected_index=$i
-          break
-        fi
-      done
 
-      # If we found a valid index, copy the corresponding full block
-      if [[ $selected_index -ne -1 ]]; then
+      # Validate if the extracted part is a number
+      if [[ "$selected_index_str" =~ ^[0-9]+$ ]]; then
+        selected_index=$selected_index_str
+      fi
+
+      # Check if the index is valid and within the bounds of the copyable_items array
+      if [[ $selected_index -ne -1 ]] && [[ $selected_index -lt ${#copyable_items[@]} ]]; then
         local final_content="${copyable_items[selected_index]}"
         # Copy the exact block content to clipboard
         # Use printf '%s' to avoid adding extra newline by echo
         printf '%s' "$final_content" | $CLIPBOARD_TOOL
         echo ""
-        gum style "Copied '$selected_option' to clipboard!" --foreground "#00FF00" --bold
+        # Display the original preview text (without index) in the success message
+        local original_preview="${preview_items[selected_index]}"
+        gum style "Copied '$original_preview' to clipboard!" --foreground "#00FF00" --bold
         echo ""
-
       else
-        # This shouldn't happen if gum choose worked correctly, but good to have a fallback
-        echo "Error: Could not match selection. Copy failed."
+        # Handle invalid index or parsing error
+        echo "Error: Invalid selection or failed to parse index. Copy failed."
       fi
     fi
   # If no blocks are found, simply don't show the prompt.
