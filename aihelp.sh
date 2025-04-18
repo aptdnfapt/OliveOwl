@@ -592,7 +592,10 @@ handle_command_copying() {
 
     # Check if gum was cancelled or if the user selected Cancel
     if [[ $gum_status -ne 0 ]] || [[ "$selected_option" == "$cancel_option" ]] || [[ -z "$selected_option" ]]; then
+      echo ""
       gum style "Coppy cancelled" --foreground "#FF0000" --bold
+      echo ""
+
     else
       # Find the index corresponding to the selected preview
       local selected_index=-1
@@ -609,7 +612,9 @@ handle_command_copying() {
         # Copy the exact block content to clipboard
         # Use printf '%s' to avoid adding extra newline by echo
         printf '%s' "$final_content" | $CLIPBOARD_TOOL
+        echo ""
         gum style "Copied '$selected_option' to clipboard!" --foreground "#00FF00" --bold
+        echo ""
 
       else
         # This shouldn't happen if gum choose worked correctly, but good to have a fallback
