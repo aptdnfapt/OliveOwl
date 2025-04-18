@@ -85,6 +85,11 @@ The script will start a new chat session and prompt you for an optional name.
 *   `/history`: Use `fzf` to select and load a previous chat session.
 *   `/config`: Re-run the API provider and model selection.
 
+**Multi-line Input:**
+
+*   **Typing:** Enter your first line at the `You:` prompt. If you need more lines, you'll see a `... ` prompt. Continue typing lines, pressing Enter after each. When finished, press Enter on an empty line at the `... ` prompt to submit the full input.
+*   **Pasting:** Paste your multi-line text at the `You:` prompt. After pasting, press Enter once. You will likely see the `... ` prompt again. Press Enter again (on the empty line) to submit the complete pasted text.
+
 **Code Block Copying:**
 
 If the AI includes Markdown code blocks (```...```) in its response, the script will detect them after the response is displayed. It will then launch `fzf`, showing a numbered list of the detected blocks (displaying the first line of each). Select the block you want to copy using `fzf`, and its full content will be copied to your clipboard. Press `Enter` or `0` in the prompt (or `Esc` in `fzf`) to cancel copying.

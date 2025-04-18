@@ -621,10 +621,79 @@ main() {
 
   # Main loop
   while true; do
-    # Read user input with readline support
-    read -e -p $'\n\e[34mYou:\e[0m ' user_input
+    # --- Read potentially multi-line user input ---
+    local first_line=""
+    local user_input=""
+    local line_count=0
 
-    # Handle commands
+    # Read the first line with the main prompt
+    read -e -p $'\n\e[34mYou:\e[0m ' first_line
+    line_count=$((line_count + 1))
+
+    # Check if the first line is a command
+    is_command=0
+    if [[ "$first_line" == /* ]]; then
+       # Check against known commands
+       case "$first_line" in
+         "/exit"|"/new"|"/history"|"/config")
+           is_command=1
+           user_input="$first_line" # Treat the command as the full input
+           ;;
+         *)
+           # Not a known command, treat as regular input
+           user_input="$first_line"
+           ;;
+       esac
+    else
+       # Not a command, start accumulating
+       user_input="$first_line"
+    fi
+
+    # Always enter loop to read subsequent lines, unless it was a command.
+    # This makes behavior consistent for typing vs pasting.
+    # User signals end of input by pressing Enter on an empty line.
+    # NOTE: Pasting multi-line text might require pressing Enter once after pasting
+    #       (to process the first line and potentially more depending on terminal),
+    #       and then Enter again on the empty '...' prompt to submit the full input.
+    if [[ $is_command -eq 0 ]]; then
+      # Loop to read subsequent lines.
+      while true; do
+        local continuation_prompt="..."
+        # Only show prompt if terminal is interactive (avoids prompt if input is piped)
+        if [[ -t 0 ]]; then
+           printf "%s " "$continuation_prompt"
+        fi
+
+        # Use read -r. Exit loop if read fails OR if the line read is empty.
+        if read -r next_line; then
+          if [ -z "$next_line" ]; then
+            # Empty line entered, signifies end of input
+            break
+          else
+            # Append the non-empty line. Handle the case where user_input might have been empty initially (if first_line was empty).
+            if [ -z "$user_input" ]; then
+               user_input="$next_line"
+            else
+               user_input=$(printf "%s\n%s" "$user_input" "$next_line")
+            fi
+            line_count=$((line_count + 1)) # Increment line count for non-empty subsequent lines
+          fi
+        else
+          # read failed (e.g., EOF from paste without trailing newline, or other error)
+          break
+        fi
+      done
+      # Adjust line count if the first line was empty but subsequent lines were added
+      if [[ "$first_line" == "" && $line_count -gt 0 ]]; then
+          line_count=$((line_count + 1)) # Account for the initial empty line if others followed
+      elif [[ "$first_line" != "" && $line_count == 0 ]]; then
+          line_count=1 # Ensure single line input has count 1
+      fi
+
+    fi
+    # --- End of multi-line input reading ---
+
+    # Handle commands (now checking the potentially multi-line user_input, but commands are single-line)
     case "$user_input" in
     "/exit")
       echo "Exiting AI Help."
