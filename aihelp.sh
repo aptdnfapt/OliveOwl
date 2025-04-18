@@ -240,23 +240,18 @@ display_history() {
     # Parse the inner message_json to get role and content
     role=$(echo "$message_json" | jq -r '.role')
     # Extract the raw content string
-    content_raw=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
-
-    # Attempt to remove potential surrounding quotes added during storage/retrieval
-    content_trimmed="${content_raw#\"}" # Remove leading quote if present
-    content_trimmed="${content_trimmed%\"}" # Remove trailing quote if present
+    content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
 
     if [[ "$role" == "user" ]]; then
-      # Use printf %b on the potentially trimmed content to interpret escapes
-      echo -e "\n\e[34mYou:\e[0m" # Print prompt first
-      printf '%b' "$content_trimmed" # Print content, interpreting escapes
-      echo # Add a newline after user content
+      # Display directly, assuming jq -r decoded correctly
+      echo -e "\n\e[34mYou:\e[0m" # Print prompt
+      echo "$content"
     elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
       # Use the specific model_used if available, otherwise fall back to the current $MODEL
       display_model_name="${model_used:-$MODEL}"
       echo -e "\n\e[32mAI ($display_model_name):\e[0m" # Green for AI, showing specific model
-      # Use printf '%b' on the potentially trimmed content before piping to bat
-      printf '%b' "$content_trimmed" | bat --language md --paging=never --style=plain --color=always
+      # Pipe the extracted content directly to bat, assuming jq -r decoded correctly
+      echo "$content" | bat --language md --paging=never --style=plain --color=always
     # Handle potential 'system' role if it ever gets stored/displayed (currently shouldn't)
     # elif [[ "$role" == "system" ]]; then
     #   echo -e "\n\e[35mSystem:\e[0m $content" # Magenta for system
@@ -371,17 +366,37 @@ call_api() {
   local user_input="$1"
   local api_url api_key payload response response_text error_message
 
-  # 1. Prepare payload (extract only the 'message_json' parts from CHAT_HISTORY)
-  local extracted_messages=()
+  # 1. Prepare payload: Convert history messages to the format required by the CURRENT API provider
+  local converted_messages=()
   for history_item_json in "${CHAT_HISTORY[@]}"; do
       # Extract the raw message_json string from the wrapper object string
-      local msg_json=$(echo "$history_item_json" | jq -r '.message_json // empty')
-      if [ -n "$msg_json" ]; then
-          extracted_messages+=("$msg_json")
+      local original_msg_json=$(echo "$history_item_json" | jq -r '.message_json // empty')
+      if [ -z "$original_msg_json" ]; then
+          echo "Warning: Skipping empty message_json in history item." >&2
+          continue
+      fi
+
+      # Parse the original message to get role and content, regardless of format
+      local original_role original_content
+      original_role=$(echo "$original_msg_json" | jq -r '.role')
+      # Try extracting from Gemini format first, then OpenRouter format
+      original_content=$(echo "$original_msg_json" | jq -r 'if .parts then .parts[0].text else .content end // empty')
+
+      if [ -z "$original_role" ] || [ -z "$original_content" ]; then
+          echo "Warning: Skipping history item with missing role or content: $original_msg_json" >&2
+          continue
+      fi
+
+      # Convert the extracted role/content to the format needed by the CURRENT provider
+      local converted_msg_json=$(create_api_message_json "$original_role" "$original_content")
+      if [ -n "$converted_msg_json" ]; then
+          converted_messages+=("$converted_msg_json")
+      else
+          echo "Warning: Failed to convert history message: $original_msg_json" >&2
       fi
   done
-  # Combine the extracted message JSON strings into a single JSON array string for the API
-  local history_json_array=$(printf "%s\n" "${extracted_messages[@]}" | jq -s '.')
+  # Combine the *converted* message JSON strings into a single JSON array string for the API
+  local history_json_array=$(printf "%s\n" "${converted_messages[@]}" | jq -s '.')
 
   # 2. Set API specifics based on provider
   if [[ "$API_PROVIDER" == "Gemini" ]]; then

@@ -10,7 +10,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   Allows naming chat sessions for easier history management.
 *   Uses `fzf` for selecting API provider, model, history files, and commands to copy.
 *   Renders AI responses as Markdown using `bat`.
-*   Copies shell commands suggested by the AI (prefixed with `>> `) to the clipboard.
+*   Detects Markdown code blocks (```...```) in AI responses and allows copying their content using `fzf`.
 *   Configuration stored in `~/.config/aihelp/`.
 
 ## Dependencies
@@ -85,6 +85,6 @@ The script will start a new chat session and prompt you for an optional name.
 *   `/history`: Use `fzf` to select and load a previous chat session.
 *   `/config`: Re-run the API provider and model selection.
 
-**Command Copying:**
+**Code Block Copying:**
 
-If the AI provides a shell command prefixed with `>> ` (e.g., `>> ls -l`), the script will detect it after the response is displayed. It will then launch `fzf` showing all detected commands from that response, numbered. Select the command you want to copy using `fzf`, and it will be copied to your clipboard. Press `Esc` in `fzf` to cancel copying.
+If the AI includes Markdown code blocks (```...```) in its response, the script will detect them after the response is displayed. It will then launch `fzf`, showing a numbered list of the detected blocks (displaying the first line of each). Select the block you want to copy using `fzf`, and its full content will be copied to your clipboard. Press `Enter` or `0` in the prompt (or `Esc` in `fzf`) to cancel copying.
