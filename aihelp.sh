@@ -342,11 +342,18 @@ start_new_session() {
   local user_choice
 
   # Prompt for session name or command
-  read -e -p "Enter name for new chat session (or /history, /exit): " user_choice
+  # Prompt for session name or command using gum input
+  user_choice=$(gum input --placeholder "Enter name for new chat session (or /history, /exit)")
+
+  # Check if gum input was cancelled (e.g., Ctrl+C or Esc)
+  if [ $? -ne 0 ]; then
+    echo "Input cancelled. Exiting."
+    exit 1
+  fi
 
   case "$user_choice" in
   "/exit")
-    echo "Exiting AI Help."
+    gum style --foreground "#FF0000" --bold "Exiting AI Help."
     exit 0
     ;;
   "/history")
@@ -627,6 +634,12 @@ handle_command_copying() {
 
 # --- Main Chat Loop ---
 main() {
+  # Display welcome message using gum style
+  gum style \
+    --foreground "#00FF00" --border-foreground "#00FFFF" --border double \
+    --align center --width 50 --padding "" \
+    "$(gum style --foreground "#00FFFF" --bold "AI Help")"
+
   # Check if configuration is complete before starting chat
   if [ -z "$API_PROVIDER" ] || [ -z "$MODEL" ]; then
     echo "Configuration incomplete." >&2
@@ -634,8 +647,12 @@ main() {
     exit 1
   fi
 
-  echo "Welcome to AI Help! Provider: $API_PROVIDER, Model: $MODEL"
-  echo "Type '/exit' to quit, '/history' to load previous chat, '/new' for new chat, '/config' to reconfigure."
+  gum style \
+    --foreground "#FFFFFF" --bold \
+    "Welcome to AI Help! Provider: $(gum style --foreground "#00FFFF" "$API_PROVIDER"), Model: $(gum style --foreground "#00FFFF" "$MODEL")"
+  gum style \
+    --foreground "#CCCCCC" \
+    "Type $(gum style --foreground "#FFFF00" --italic "/exit") to quit, $(gum style --foreground "#FFFF00" --italic "/history") to load previous chat, $(gum style --foreground "#FFFF00" --italic "/new") for new chat, $(gum style --foreground "#FFFF00" --italic "/config") to reconfigure."
 
   # Initial session setup
   local start_status
