@@ -115,26 +115,57 @@ configure_settings() {
   fi
 
   # 2. Select Model
-  local model_list
+  local model_list=""
+  local fetched_models=""
+  local fzf_input=""
+  local manual_entry_option="-- Manual Model Entry --"
+
   case "$API_PROVIDER" in
   "Gemini")
-    # Check for Gemini Key
+    # Check for Gemini Key first
     if [ -z "$GEMINI_API_KEY" ]; then
-      echo "Error: GEMINI_API_KEY not set in $ENV_FILE." >&2
-      exit 1
+      echo "Warning: GEMINI_API_KEY not set in $ENV_FILE. Cannot fetch models." >&2
+      # Proceed with only manual entry option
+    else
+      echo "Fetching Gemini models..."
+      local gemini_url="https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
+      local gemini_response=$(curl -s "$gemini_url")
+      if [ $? -ne 0 ]; then
+        echo "Warning: curl command failed for Gemini. Using manual entry only." >&2
+      else
+        local gemini_error=$(echo "$gemini_response" | jq -r '.error.message // empty')
+        if [ -n "$gemini_error" ]; then
+          echo "Warning: Gemini API Error: $gemini_error. Using manual entry only." >&2
+        elif echo "$gemini_response" | jq -e '.models' > /dev/null 2>&1; then
+          fetched_models=$(echo "$gemini_response" | jq -r '.models[].name')
+          if [ -z "$fetched_models" ]; then
+             echo "Warning: No models found in Gemini response. Using manual entry only." >&2
+          fi
+        else
+           echo "Warning: Invalid JSON or missing 'models' in Gemini response. Using manual entry only." >&2
+        fi
+      fi
     fi
-    # Updated hardcoded list for Gemini
-    model_list="gemini-2.5-pro-exp-03-25\ngemini-2.0-flash\ngemini-2.0-pro-exp-02-05\ngemini-2.0-flash-lite\ngemini-2.0-flash-thinking-exp-01-21\ngemini-1.5-flash\ngemini-1.5-pro\ngemini-1.0-pro-vision\ngemini-1.0-pro\ngemma-3-27b-it\ngemini-2.0-flash-thinking-exp-1219"
     ;;
   "OpenRouter")
-    # Check for OpenRouter Key
+    # OpenRouter key not strictly needed for model listing, but good practice to have it set for actual use later
     if [ -z "$OPENROUTER_API_KEY" ]; then
-      echo "Error: OPENROUTER_API_KEY not set in $ENV_FILE." >&2
-      exit 1
+       echo "Warning: OPENROUTER_API_KEY not set in $ENV_FILE. You will need it to use OpenRouter models." >&2
+       # Continue fetching anyway, as the endpoint is public
     fi
-    # Updated hardcoded list for OpenRouter
-    model_list="meta-llama/llama-4-maverick:free\nmeta-llama/llama-4-scout:free\ndeepseek/deepseek-chat-v3-0324:free\nmeta-llama/llama-3.2-1b-instruct:free\nqwen/qwen2.5-vl-32b-instruct:free\nopen-r1/olympiccoder-32b:free\nqwen/qwq-32b:free\ndeepseek/deepseek-chat-v3-0324:free\ngoogle/gemini-2.0-pro-exp-02-05:free\ndeepseek/deepseek-v3:free\ndeepseek/deepseek-r1:free\ndeepseek/deepseek-r1-distill-llama-70b\ndeepseek/deepseek-r1-distill-qwen-32b\ndeepseek/deepseek-r1-distill-qwen-14b\ndeepseek/deepseek-r1-distill-llama-8b\ndeepseek/deepseek-r1-distill-qwen-1.5b\ndeepseek/deepseek-r1-zero:free\nmistralai/mixtral-8x7b-instruct\nmeta-llama/llama-3-8b-instruct"
-    # Note: Removed dynamic fetching via fetch_openrouter_models
+    echo "Fetching OpenRouter models..."
+    local openrouter_url="https://openrouter.ai/api/v1/models"
+    local openrouter_response=$(curl -s "$openrouter_url")
+     if [ $? -ne 0 ]; then
+        echo "Warning: curl command failed for OpenRouter. Using manual entry only." >&2
+      elif echo "$openrouter_response" | jq -e '.data' > /dev/null 2>&1; then
+        fetched_models=$(echo "$openrouter_response" | jq -r '.data[].id')
+         if [ -z "$fetched_models" ]; then
+             echo "Warning: No models found in OpenRouter response. Using manual entry only." >&2
+          fi
+      else
+        echo "Warning: Invalid JSON or missing 'data' in OpenRouter response. Using manual entry only." >&2
+      fi
     ;;
   *)
     echo "Invalid provider selected."
@@ -142,12 +173,34 @@ configure_settings() {
     ;;
   esac
 
-  MODEL=$(echo -e "$model_list" | fzf --prompt="Select Model for $API_PROVIDER: " --height=15 --layout=reverse) # Use fixed height
+  # Prepare input for fzf: Manual option first, then fetched models
+  fzf_input="$manual_entry_option"
+  if [ -n "$fetched_models" ]; then
+    # Sort models alphabetically for better usability
+    fetched_models=$(echo "$fetched_models" | sort)
+    fzf_input="$fzf_input\n$fetched_models"
+  fi
 
+  # Use fzf for selection
+  MODEL=$(echo -e "$fzf_input" | fzf --prompt="Select Model for $API_PROVIDER: " --height=15 --layout=reverse)
+
+  # Handle fzf cancellation
   if [ -z "$MODEL" ]; then
     echo "Configuration cancelled."
     exit 1
   fi
+
+  # Check if manual entry was selected
+  if [[ "$MODEL" == "$manual_entry_option" ]]; then
+    echo "Manual entry selected."
+    MODEL=$(gum input --placeholder "Enter exact model name/ID for $API_PROVIDER...")
+    # Handle cancellation of gum input
+    if [ $? -ne 0 ] || [ -z "$MODEL" ]; then
+       echo "Manual entry cancelled or empty. Configuration cancelled."
+       exit 1
+    fi
+  fi
+  # MODEL variable now holds either the selected fetched model or the manually entered one
 
   # 3. Save Configuration
   echo "Saving configuration..."
@@ -423,7 +476,8 @@ call_api() {
     api_key="$GEMINI_API_KEY"
     # Note: Gemini API URL structure might vary slightly based on region or specific model version. Adjust if needed.
     # Using v1beta for generative models as it's common.
-    api_url="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${api_key}"
+    # The MODEL variable fetched from the API already contains the "models/" prefix.
+    api_url="https://generativelanguage.googleapis.com/v1beta/${MODEL}:generateContent?key=${api_key}"
 
     # Gemini payload structure: { "contents": [history array], "systemInstruction": { "parts": [{"text": "..."}] } }
     # Construct the payload JSON using jq for proper escaping
@@ -465,7 +519,7 @@ call_api() {
         response_text="[Response blocked by recitation policy]"
       else
         echo "Error: Could not extract text from Gemini response. Finish Reason: $finish_reason" >&2
-        # echo "Full Gemini Response: $response" >&2 # for debugging
+        echo "Full Gemini Response: $response" >&2 # Temporarily uncommented for debugging
         return 1
       fi
     fi

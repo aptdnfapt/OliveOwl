@@ -29,15 +29,8 @@ and then use colors on intial starting of the script use colors to make the comm
 
 16. in the initial welcome / starting the gum input to name the history file we can input /history or /config. i want you to add a way to input /config too on that starting point 
 
+17. as new gemini and open router models droping every day . hardcoding model name in the main script is a bad idea make a plan for this .
 
-
-
-
-
-
-
-
-
-doesnt matter rn but later . - change the name of the project .:) oliveowl
+18. in the mid of chatting with the ai if we change the model via /config it tends to make a new chat by prompting me to name the file but its not extected tho. cause in mid chat it should just continue the chat .
 
 
