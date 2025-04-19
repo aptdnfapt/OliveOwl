@@ -798,15 +798,7 @@ main() {
         source "$CONFIG_FILE"
       fi
       echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
-      # After config, prompt for session action again
-      local config_status
-      start_new_session
-      config_status=$?
-      if [ $config_status -ne 0 ]; then
-        # If /history was chosen but failed or was cancelled, start a default new session
-        echo "Falling back to new timestamped session."
-        create_new_session_file "" # Create default timestamped session
-      fi
+      # After config, continue the current session with the new settings
       continue
       ;;
 
