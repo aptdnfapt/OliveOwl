@@ -1,4 +1,4 @@
-# AI Help - Terminal AI Chat Assistant
+# OliveOwl - Terminal AI Chat Assistant
 
 A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, and easy command copying via `fzf`.
 
@@ -6,12 +6,12 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 
 *   Supports Google Gemini and OpenRouter compatible APIs.
 *   Interactive chat loop in the terminal.
-*   Saves chat history in JSON files (`~/.config/aihelp/history/`).
+*   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
 *   Allows naming chat sessions for easier history management.
 *   Uses `fzf` for selecting API provider, model, history files, and commands to copy.
 *   Renders AI responses as Markdown using `bat`.
 *   Detects Markdown code blocks (```...```) in AI responses and allows copying their content using `fzf`.
-*   Configuration stored in `~/.config/aihelp/`.
+*   Configuration stored in `~/.config/oliveowl/`.
 
 ## Dependencies
 
@@ -53,43 +53,43 @@ For other systems (like Arch, macOS with Homebrew, or manual install), see the [
 
 ## Installation
 
-1.  **Clone or Download:** Get the `aihelp.sh` script into a directory (e.g., `~/aihelp`).
+1.  **Clone or Download:** Get the `oliveowl.sh` script into a directory (e.g., `~/oliveowl`).
 2.  **Make Executable:**
     ```bash
-    chmod +x aihelp.sh
+    chmod +x oliveowl.sh
     ```
 3.  **(Optional) Add to PATH:** For global access, move or link the script to a directory in your `$PATH`. A common place is `~/.local/bin`:
     ```bash
     mkdir -p ~/.local/bin
-    mv aihelp.sh ~/.local/bin/aihelp
+    mv oliveowl.sh ~/.local/bin/oliveowl
     ```
-    Ensure `~/.local/bin` is in your `$PATH` (check your `~/.profile` or `~/.bashrc`). You might need to restart your terminal or run `source ~/.profile`. After this, you can run the tool by just typing `aihelp`.
+    Ensure `~/.local/bin` is in your `$PATH` (check your `~/.profile` or `~/.bashrc`). You might need to restart your terminal or run `source ~/.profile`. After this, you can run the tool by just typing `oliveowl`.
 
 ## Configuration
 
-1.  **Create Config Directory (if needed):** The script attempts to create `~/.config/aihelp` on first run, but you can create it manually: `mkdir -p ~/.config/aihelp`
-2.  **Add API Keys:** Create or edit the environment file `~/.config/aihelp/.env`. Add your API keys:
+1.  **Create Config Directory (if needed):** The script attempts to create `~/.config/oliveowl` on first run, but you can create it manually: `mkdir -p ~/.config/oliveowl`
+2.  **Add API Keys:** Create or edit the environment file `~/.config/oliveowl/.env`. Add your API keys:
     ```ini
-    # ~/.config/aihelp/.env
+    # ~/.config/oliveowl/.env
     GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
     OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY_HERE
     ```
-    Replace the placeholders with your actual keys. You only need the key for the provider(s) you intend to use. Make the file readable only by you: `chmod 600 ~/.config/aihelp/.env`.
+    Replace the placeholders with your actual keys. You only need the key for the provider(s) you intend to use. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
 3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider and model using `fzf`:
     ```bash
-    ./aihelp.sh --config
+    ./oliveowl.sh --config
     # or if added to PATH:
-    # aihelp --config
+    # oliveowl --config
     ```
-    This saves your choices to `~/.config/aihelp/config`.
+    This saves your choices to `~/.config/oliveowl/config`.
 
 ## Usage
 
 Run the script:
 ```bash
-./aihelp.sh
+./oliveowl.sh
 # or if added to PATH:
-# aihelp
+# oliveowl
 ```
 
 The script will start a new chat session and prompt you for an optional name.

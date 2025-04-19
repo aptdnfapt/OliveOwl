@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# aihelp - Terminal AI Chat Assistant
+# oliveowl - Terminal AI Chat Assistant
 
 # --- Configuration ---
-CONFIG_DIR="$HOME/.config/aihelp"
+CONFIG_DIR="$HOME/.config/oliveowl"
 ENV_FILE="$CONFIG_DIR/.env"
 HISTORY_DIR="$CONFIG_DIR/history"
 CONFIG_FILE="$CONFIG_DIR/config"
@@ -479,7 +479,7 @@ call_api() {
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer $api_key" \
       -H "HTTP-Referer: http://localhost" \
-      -H "X-Title: AIHelp CLI" \
+      -H "X-Title: OliveOwl CLI" \
       -d "$payload")
 
     # 4. Parse OpenRouter response and handle errors
