@@ -1,6 +1,18 @@
 # OliveOwl - Terminal AI Chat Assistant
 
-A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, and easy command copying via `fzf`.
+```
+  ,-.   ,-.  
+ ( O ) (o.o)  
+  `-’   |_)  oliveowl 
+    “who?”
+```
+
+This project was inspired by the Warp AI Terminal and developed with significant assistance from Gemini 2.5.
+
+Check out a video demonstration of OliveOwl here:
+[https://youtu.be/mkkkX1Grqs8](https://youtu.be/mkkkX1Grqs8)
+
+A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, easy command copying via `fzf`, dynamic model selection, and a loading spinner.
 
 ## Features
 
@@ -8,9 +20,12 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   Interactive chat loop in the terminal.
 *   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
 *   Allows naming chat sessions for easier history management.
-*   Uses `fzf` for selecting API provider, model, history files, and commands to copy.
+*   Uses `fzf` for selecting API provider, history files, and commands to copy.
+*   **Dynamically fetches and presents available models during configuration.**
+*   **Includes a loading spinner animation while waiting for AI responses.**
+*   **Allows using `/config` in the initial session prompt to reconfigure API settings.**
 *   Renders AI responses as Markdown using `bat`.
-*   Detects Markdown code blocks (```...```) in AI responses and allows copying their content using `fzf`.
+*   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `fzf`.
 *   Configuration stored in `~/.config/oliveowl/`.
 
 ## Dependencies
@@ -22,7 +37,7 @@ You need the following command-line tools installed:
 *   `jq` (for parsing JSON responses)
 *   `fzf` (for fuzzy finding/selection menus)
 *   `bat` (for syntax highlighting/Markdown rendering)
-*   `gum` (for multi-line input editing)
+*   `gum` (for multi-line input editing and spinners)
 *   A clipboard tool: `xclip` (for X11) or `wl-copy` (for Wayland)
 
 Install them using your system's package manager. For example, on Debian/Ubuntu:
@@ -45,7 +60,7 @@ sudo dnf config-manager --add-repo https://repo.charm.sh/yum/charm.repo
 # Install dependencies
 sudo dnf install -y curl jq fzf bat gum xclip # or wl-clipboard for wl-copy
 ```
-For other systems (like Arch, macOS with Homebrew, or manual install), see the [Gum installation guide](https://github.com/charmbracelet/gum#installation).
+For other Unix-like systems (Arch Linux, macOS with Homebrew, etc.), please refer to the documentation for each individual tool (`curl`, `jq`, `fzf`, `bat`, `gum`, `xclip`/`wl-clipboard`) for installation instructions using your preferred package manager or method.
 
 **Important:** It's recommended to use the latest version of `gum` available from the official Charm repository (as shown above) or other official installation methods. Older versions might have bugs (e.g., issues with multi-line input handling). Ensure your package manager is configured to pull the latest version from the Charm source if applicable.
 
@@ -75,7 +90,7 @@ For other systems (like Arch, macOS with Homebrew, or manual install), see the [
     OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY_HERE
     ```
     Replace the placeholders with your actual keys. You only need the key for the provider(s) you intend to use. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
-3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider and model using `fzf`:
+3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider and model. The script will dynamically fetch available models for you to choose from using `fzf`.
     ```bash
     ./oliveowl.sh --config
     # or if added to PATH:
@@ -92,11 +107,11 @@ Run the script:
 # oliveowl
 ```
 
-The script will start a new chat session and prompt you for an optional name.
+The script will prompt you to enter a name for a new chat session, or you can type `/history` to load a previous chat, `/config` to reconfigure, or `/exit` to quit.
 
 **In-Chat Commands:**
 
-*   `/exit`: Quit the chat session.
+*   `/exit`: Quit the current chat session.
 *   `/new`: Start a new chat session (prompts for an optional name).
 *   `/history`: Use `fzf` to select and load a previous chat session.
 *   `/config`: Re-run the API provider and model selection.
@@ -110,4 +125,4 @@ When prompted with `You:`, the script will open a minimal text editor using `gum
 
 **Code Block Copying:**
 
-If the AI includes Markdown code blocks (```...```) in its response, the script will detect them after the response is displayed. It will then launch `fzf`, showing a numbered list of the detected blocks (displaying the first line of each). Select the block you want to copy using `fzf`, and its full content will be copied to your clipboard. Press `Enter` or `0` in the prompt (or `Esc` in `fzf`) to cancel copying.
+If the AI includes Markdown code blocks (\`\`\`...\`\`\`) in its response, the script will detect them after the response is displayed. It will then launch `gum choose`, showing a numbered list of the detected blocks (displaying the first line of each). Select the block you want to copy using `gum choose`, and its full content will be copied to your clipboard. Press `Ctrl+C` or `Esc` to cancel copying.
