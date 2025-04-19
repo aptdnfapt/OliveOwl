@@ -343,7 +343,7 @@ start_new_session() {
 
   # Prompt for session name or command
   # Prompt for session name or command using gum input
-  user_choice=$(gum input --placeholder "Enter name for new chat session (or /history, /exit)")
+  user_choice=$(gum input --placeholder "Enter name for new chat session (or /history, /config, /exit)")
 
   # Check if gum input was cancelled (e.g., Ctrl+C or Esc)
   if [ $? -ne 0 ]; then
@@ -359,6 +359,18 @@ start_new_session() {
   "/history")
     select_and_load_history # This function handles messages and returns status
     return $?               # Return status (0 for success, 1 for fail/cancel)
+    ;;
+  "/config")
+    echo "Switching to config..."
+    configure_settings # Re-run config
+    # Re-source config in case it changed
+    if [ -f "$CONFIG_FILE" ]; then
+      source "$CONFIG_FILE"
+    fi
+    echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
+    # After config, prompt again for session action
+    start_new_session # Recursive call
+    return $?         # Return status from the recursive call
     ;;
   *)
     # Treat anything else (name or blank) as a request for a new session

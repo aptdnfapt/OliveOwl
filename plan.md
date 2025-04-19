@@ -21,12 +21,13 @@ and then use colors on intial starting of the script use colors to make the comm
 (done dev2)
 
 
-13. make the initial welcome and instruction msg none perple to light blue . make the ascci art bold .
+13. make the initial welcome and instruction msg none perple to light blue . make the ascci art bold . (done dev2 )
 
-14. in chat convo make You: and AI(): bold and use perple for ai bodel and blue for You:
+14. in chat convo make You: and AI(): bold and use perple for ai bodel and blue for You: (done dev2)
 
-15. add gum animation in the time of api loading to generate response 
+15. add gum animation in the time of api loading to generate response  (done dev2)
 
+16. in the initial welcome / starting the gum input to name the history file we can input /history or /config. i want you to add a way to input /config too on that starting point 
 
 
 
