@@ -18,9 +18,14 @@
     “who?”
 
 and then use colors on intial starting of the script use colors to make the command look coloufull .rn it uses gum but gum styl is quite slow so we not gona use that .so 1st make the whole project oliveowl as name and then use the ascii art with perple color . and remove the aihelp box of gum . make the initial text colored with echo and bold with echo and not gum . i mean color the commands use perple color as base for styling whole script . 
+(done dev2)
 
 
+13. make the initial welcome and instruction msg none perple to light blue . make the ascci art bold .
 
+14. in chat convo make You: and AI(): bold and use perple for ai bodel and blue for You:
+
+15. add gum animation in the time of api loading to generate response 
 
 
 

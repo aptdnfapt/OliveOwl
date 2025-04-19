@@ -245,12 +245,12 @@ display_history() {
 
     if [[ "$role" == "user" ]]; then
       # Display directly, assuming jq -r decoded correctly
-      echo -e "\n\e[34mYou:\e[0m" # Print prompt
+      echo -e "\n\e[1m\e[34mYou:\e[0m" # Print prompt (Bold Blue)
       echo "$content"
     elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
       # Use the specific model_used if available, otherwise fall back to the current $MODEL
       display_model_name="${model_used:-$MODEL}"
-      echo -e "\n\e[32mAI ($display_model_name):\e[0m" # Green for AI, showing specific model
+      echo -e "\n\e[1m\e[35mAI ($display_model_name):\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
       # Pipe the extracted content directly to bat, assuming jq -r decoded correctly
       echo "$content" | bat --language md --paging=never --style=plain --color=always
     # Handle potential 'system' role if it ever gets stored/displayed (currently shouldn't)
@@ -636,11 +636,13 @@ handle_command_copying() {
 
 # --- Main Chat Loop ---
 main() {
-  # Display welcome message using gum style
-  gum style \
-    --foreground "#00FF00" --border-foreground "#00FFFF" --border double \
-    --align center --width 50 --padding "" \
-    "$(gum style --foreground "#00FFFF" --bold "AI Help")"
+  # Display ASCII Art Welcome
+  echo -e "\e[1;35m" # Set color to bold purple
+  echo "  ,-.   ,-."
+  echo " ( O ) (o.o)"
+  echo "  \`-’   |_)  oliveowl"
+  echo "    “who?”"
+  echo -e "\e[0m" # Reset color and bold
 
   # Check if configuration is complete before starting chat
   if [ -z "$API_PROVIDER" ] || [ -z "$MODEL" ]; then
@@ -649,12 +651,9 @@ main() {
     exit 1
   fi
 
-  gum style \
-    --foreground "#FFFFFF" --bold \
-    "Welcome to AI Help! Provider: $(gum style --foreground "#00FFFF" "$API_PROVIDER"), Model: $(gum style --foreground "#00FFFF" "$MODEL")"
-  gum style \
-    --foreground "#CCCCCC" \
-    "Type $(gum style --foreground "#FFFF00" --italic "/exit") to quit, $(gum style --foreground "#FFFF00" --italic "/history") to load previous chat, $(gum style --foreground "#FFFF00" --italic "/new") for new chat, $(gum style --foreground "#FFFF00" --italic "/config") to reconfigure."
+  # Display Welcome and Instructions using echo with ANSI colors
+  echo -e "\e[0;94mWelcome to \e[1;35mOliveOwl\e[0;94m! Provider: \e[1;35m$API_PROVIDER\e[0;94m, Model: \e[1;35m$MODEL\e[0m"
+  echo -e "\e[0;94mType \e[1;35m/exit\e[0;94m to quit, \e[1;35m/history\e[0;94m to load previous chat, \e[1;35m/new\e[0;94m for new chat, \e[1;35m/config\e[0;94m to reconfigure.\e[0m"
 
   # Initial session setup
   local start_status
@@ -672,7 +671,7 @@ main() {
     # --- Read user input using gum write ---
     local user_input=""
     # Display prompt manually before calling gum
-    printf '\n\e[34mYou:\e[0m\n' # Print "You:" prompt on its own line
+    printf '\n\e[1;34mYou:\e[0m\n' # Print "You:" prompt on its own line (Bold Blue)
 
     # Use gum write to capture multi-line input.
     # Set a placeholder to encourage input.
@@ -812,7 +811,7 @@ main() {
     interpreted_response=$(printf '%b' "$ai_response")
 
     # Display interpreted AI response using bat
-    echo -e "\n\e[32mAI ($MODEL):\e[0m" # Green for AI
+    echo -e "\n\e[1;35mAI ($MODEL):\e[0m" # Bold Purple for AI
     echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
 
     # Handle command copying using the interpreted response
