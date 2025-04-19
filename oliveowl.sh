@@ -773,10 +773,31 @@ main() {
       continue
     fi
 
-    # Call the API
+    # Call the API with gum spinner (Method 2: Background API call)
     local ai_response
+    local api_call_status
+    local temp_response_file=$(mktemp)
+    # Call the API with gum spinner (Method 2: Background API call)
+    local ai_response
+    # Call the API with gum spinner (Method 1 variation: Background spinner, foreground API call)
+    local ai_response
+    local api_call_status
+    local spinner_pid
+
+    # Start spinner in the background with a dummy command
+    gum spin --spinner dot --title "Waiting for AI response..." -- sleep infinity &
+    spinner_pid=$!
+    # Ensure spinner is killed on script exit or error
+    trap 'kill $spinner_pid 2>/dev/null' EXIT
+
+    # Call the API synchronously in the foreground
     ai_response=$(call_api "$user_input")
-    local api_call_status=$?
+    api_call_status=$?
+
+    # Stop the spinner explicitly
+    kill $spinner_pid 2>/dev/null
+    # Remove the trap so it doesn't try to kill again on normal exit
+    trap - EXIT
 
     if [ $api_call_status -ne 0 ] || [ -z "$ai_response" ]; then
       echo "Error: API call failed."
