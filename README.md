@@ -12,7 +12,7 @@ This project was inspired by the Warp AI Terminal and developed with significant
 Check out a video demonstration of OliveOwl here:
 [https://youtu.be/mkkkX1Grqs8](https://youtu.be/mkkkX1Grqs8)
 
-A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, easy command copying via `fzf`, dynamic model selection, and a loading spinner.
+A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, easy command copying via `gum choose`, dynamic model selection, and a loading spinner.
 
 ## Features
 
@@ -20,12 +20,14 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   Interactive chat loop in the terminal.
 *   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
 *   Allows naming chat sessions for easier history management.
-*   Uses `fzf` for selecting API provider, history files, and commands to copy.
+*   Uses `fzf` for selecting API provider and history files.
+*   Uses `gum choose` for selecting code blocks to copy.
 *   **Dynamically fetches and presents available models during configuration.**
 *   **Includes a loading spinner animation while waiting for AI responses.**
-*   **Allows using `/config` in the initial session prompt to reconfigure API settings.**
+*   **Allows using `/config` in the initial session prompt or during chat to reconfigure API settings.**
+*   **Allows using `/view` during chat to open the current history in your configured editor.**
 *   Renders AI responses as Markdown using `bat`.
-*   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `fzf`.
+*   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `gum choose`.
 *   Configuration stored in `~/.config/oliveowl/`.
 
 ## Dependencies
@@ -114,7 +116,8 @@ The script will prompt you to enter a name for a new chat session, or you can ty
 *   `/exit`: Quit the current chat session.
 *   `/new`: Start a new chat session (prompts for an optional name).
 *   `/history`: Use `fzf` to select and load a previous chat session.
-*   `/config`: Re-run the API provider and model selection.
+*   `/config`: Re-run the API provider, model, and editor selection.
+*   `/view`: Open the current chat history in your configured editor (e.g., `nvim`, `vi`, `nano`).
 
 **User Input:**
 

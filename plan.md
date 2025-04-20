@@ -42,4 +42,4 @@ and then use colors on intial starting of the script use colors to make the comm
 (done dev2)
 19. in the mid of chatting with the ai if we change the model via /config it tends to make a new chat by prompting me to name the file but its not extected tho. cause in mid chat it should just continue the chat .
 (done dev2)
-
+20. nvim / any terminal editor added /view to get a great view on the chat (done dev2)
