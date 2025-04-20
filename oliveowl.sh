@@ -76,6 +76,7 @@ setup_config() {
     echo "Creating default settings file: $CONFIG_FILE"
     echo "API_PROVIDER=" >"$CONFIG_FILE" # Will be 'gemini' or 'openrouter'
     echo "MODEL=" >>"$CONFIG_FILE"
+    echo "EDITOR=\"vi\"" >>"$CONFIG_FILE" # Add default editor
   fi
 
   # Load config settings
@@ -83,10 +84,14 @@ setup_config() {
   if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
   else
-    echo "Warning: Config file $CONFIG_FILE not found." >&2
+    echo "Warning: Config file $CONFIG_FILE not found. Using defaults." >&2
   fi
 
+  # Set default editor if not found in config
+  EDITOR="${EDITOR:-vi}"
+
   # NOTE: Configuration completeness check moved to main()
+  # Ensure EDITOR command exists - Moved to after setup_config call before main()
 }
 
 # --- Configuration Function ---
@@ -202,14 +207,25 @@ configure_settings() {
   fi
   # MODEL variable now holds either the selected fetched model or the manually entered one
 
-  # 3. Save Configuration
+  # 3. Configure Editor
+  local current_editor=${EDITOR:-vi} # Get current or default from sourced config or default
+  local new_editor
+  new_editor=$(gum input --header "Configure Editor" --placeholder "Enter preferred editor command (current: $current_editor)..." --value "$current_editor")
+  # Update EDITOR only if gum input succeeded and value is not empty
+  if [ $? -eq 0 ] && [ -n "$new_editor" ]; then
+      EDITOR="$new_editor"
+  fi
+
+  # 4. Save Configuration
   echo "Saving configuration..."
   echo "API_PROVIDER=\"$API_PROVIDER\"" >"$CONFIG_FILE"
   echo "MODEL=\"$MODEL\"" >>"$CONFIG_FILE"
+  echo "EDITOR=\"$EDITOR\"" >>"$CONFIG_FILE" # Save editor setting
 
   echo "Configuration saved to $CONFIG_FILE:"
   echo "  Provider: $API_PROVIDER"
   echo "  Model: $MODEL"
+  echo "  Editor: $EDITOR"
   echo "Setup complete. You can now run '$0'." # Use $0 for the current script name
 }
 
@@ -356,6 +372,56 @@ save_history() {
     # Decide if we should return an error code? For now, just print error.
     return 1 # Indicate save failure
   fi
+}
+
+# Function to format and view history in editor
+view_history() {
+  if [ ${#CHAT_HISTORY[@]} -eq 0 ]; then
+    echo "Chat history is empty. Nothing to view."
+    return
+  fi
+
+  local temp_history_file
+  temp_history_file=$(mktemp --suffix=.md) # Create temp markdown file
+  # Ensure temp file is deleted on exit/interrupt
+  trap 'rm -f "$temp_history_file" 2>/dev/null' EXIT INT TERM HUP
+
+  echo "# Chat History ($(date))" > "$temp_history_file"
+  echo "" >> "$temp_history_file"
+
+  # Iterate through history and format as Markdown
+  for history_item_json in "${CHAT_HISTORY[@]}"; do
+    local message_json model_used role content display_model_name
+    message_json=$(echo "$history_item_json" | jq -r '.message_json // empty')
+    model_used=$(echo "$history_item_json" | jq -r '.model_used // empty')
+
+    if [ -z "$message_json" ]; then continue; fi # Skip invalid items
+
+    role=$(echo "$message_json" | jq -r '.role')
+    content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
+
+    if [[ "$role" == "user" ]]; then
+      echo "### You:" >> "$temp_history_file"
+      echo "" >> "$temp_history_file"
+      echo "$content" >> "$temp_history_file"
+    elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
+      display_model_name="${model_used:-$MODEL}"
+      echo "### AI ($display_model_name):" >> "$temp_history_file"
+      echo "" >> "$temp_history_file"
+      echo "$content" >> "$temp_history_file" # Raw content, editor handles wrapping
+    fi
+    echo "" >> "$temp_history_file"
+    echo "---" >> "$temp_history_file" # Separator
+    echo "" >> "$temp_history_file"
+  done
+
+  # Open the temp file in the configured editor
+  "$EDITOR" "$temp_history_file"
+
+  # Remove trap and delete file explicitly after editor closes
+  trap - EXIT INT TERM HUP
+  rm -f "$temp_history_file" 2>/dev/null
+  echo "Resuming chat..." # Indicate return to chat
 }
 
 # Function to create the actual new session file
@@ -720,6 +786,7 @@ main() {
   # Display Welcome and Instructions using echo with ANSI colors
   echo -e "\e[0;94mWelcome to \e[1;35mOliveOwl\e[0;94m! Provider: \e[1;35m$API_PROVIDER\e[0;94m, Model: \e[1;35m$MODEL\e[0m"
   echo -e "\e[0;94mType \e[1;35m/exit\e[0;94m to quit, \e[1;35m/history\e[0;94m to load previous chat, \e[1;35m/new\e[0;94m for new chat, \e[1;35m/config\e[0;94m to reconfigure.\e[0m"
+  echo -e "\e[0;94mType \e[1;35m/view\e[0;94m to open current history in \e[1;35m$EDITOR\e[0m.\e[0m" # Add /view instruction
 
   # Initial session setup
   local start_status
@@ -800,6 +867,11 @@ main() {
       echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
       # After config, continue the current session with the new settings
       continue
+      ;;
+    "/view")
+      is_command_handled=1
+      view_history # Call the new function
+      continue # Skip API call for this turn
       ;;
 
     "")                    # Handle empty input
@@ -909,6 +981,8 @@ fi
 # --- Run Setup and Main ---
 # Setup needs to run first to load config for main
 setup_config
+# Check EDITOR dependency after setup_config sets/loads it
+check_dependency "$EDITOR"
 main
 
 exit 0
