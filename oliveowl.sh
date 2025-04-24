@@ -320,6 +320,7 @@ display_history() {
       # Use the specific model_used if available, otherwise fall back to the current $MODEL
       display_model_name="${model_used:-$MODEL}"
       echo -e "\n\e[1m\e[35mAI ($display_model_name):\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
+      echo -e "\e[1m\e[35m=============================================\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
       # Pipe the extracted content directly to bat, assuming jq -r decoded correctly
       echo "$content" | bat --language md --paging=never --style=plain --color=always
     # Handle potential 'system' role if it ever gets stored/displayed (currently shouldn't)
@@ -963,6 +964,7 @@ main() {
 
     # Display interpreted AI response using bat
     echo -e "\n\e[1;35mAI ($MODEL):\e[0m" # Bold Purple for AI
+    echo -e "\e[1m\e[35m=============================================\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
     echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
 
     # Handle command copying using the interpreted response
