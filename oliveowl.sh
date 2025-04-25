@@ -108,7 +108,7 @@ fetch_openrouter_models() {
 }
 
 configure_settings() {
-  echo "--- AI Help Configuration ---"
+  echo "--- OliveOwl Configuration ---"
 
   # 1. Select API Provider
   local providers="Gemini\nOpenRouter"
@@ -141,13 +141,13 @@ configure_settings() {
         local gemini_error=$(echo "$gemini_response" | jq -r '.error.message // empty')
         if [ -n "$gemini_error" ]; then
           echo "Warning: Gemini API Error: $gemini_error. Using manual entry only." >&2
-        elif echo "$gemini_response" | jq -e '.models' > /dev/null 2>&1; then
+        elif echo "$gemini_response" | jq -e '.models' >/dev/null 2>&1; then
           fetched_models=$(echo "$gemini_response" | jq -r '.models[].name')
           if [ -z "$fetched_models" ]; then
-             echo "Warning: No models found in Gemini response. Using manual entry only." >&2
+            echo "Warning: No models found in Gemini response. Using manual entry only." >&2
           fi
         else
-           echo "Warning: Invalid JSON or missing 'models' in Gemini response. Using manual entry only." >&2
+          echo "Warning: Invalid JSON or missing 'models' in Gemini response. Using manual entry only." >&2
         fi
       fi
     fi
@@ -155,22 +155,22 @@ configure_settings() {
   "OpenRouter")
     # OpenRouter key not strictly needed for model listing, but good practice to have it set for actual use later
     if [ -z "$OPENROUTER_API_KEY" ]; then
-       echo "Warning: OPENROUTER_API_KEY not set in $ENV_FILE. You will need it to use OpenRouter models." >&2
-       # Continue fetching anyway, as the endpoint is public
+      echo "Warning: OPENROUTER_API_KEY not set in $ENV_FILE. You will need it to use OpenRouter models." >&2
+      # Continue fetching anyway, as the endpoint is public
     fi
     echo "Fetching OpenRouter models..."
     local openrouter_url="https://openrouter.ai/api/v1/models"
     local openrouter_response=$(curl -s "$openrouter_url")
-     if [ $? -ne 0 ]; then
-        echo "Warning: curl command failed for OpenRouter. Using manual entry only." >&2
-      elif echo "$openrouter_response" | jq -e '.data' > /dev/null 2>&1; then
-        fetched_models=$(echo "$openrouter_response" | jq -r '.data[].id')
-         if [ -z "$fetched_models" ]; then
-             echo "Warning: No models found in OpenRouter response. Using manual entry only." >&2
-          fi
-      else
-        echo "Warning: Invalid JSON or missing 'data' in OpenRouter response. Using manual entry only." >&2
+    if [ $? -ne 0 ]; then
+      echo "Warning: curl command failed for OpenRouter. Using manual entry only." >&2
+    elif echo "$openrouter_response" | jq -e '.data' >/dev/null 2>&1; then
+      fetched_models=$(echo "$openrouter_response" | jq -r '.data[].id')
+      if [ -z "$fetched_models" ]; then
+        echo "Warning: No models found in OpenRouter response. Using manual entry only." >&2
       fi
+    else
+      echo "Warning: Invalid JSON or missing 'data' in OpenRouter response. Using manual entry only." >&2
+    fi
     ;;
   *)
     echo "Invalid provider selected."
@@ -201,8 +201,8 @@ configure_settings() {
     MODEL=$(gum input --placeholder "Enter exact model name/ID for $API_PROVIDER...")
     # Handle cancellation of gum input
     if [ $? -ne 0 ] || [ -z "$MODEL" ]; then
-       echo "Manual entry cancelled or empty. Configuration cancelled."
-       exit 1
+      echo "Manual entry cancelled or empty. Configuration cancelled."
+      exit 1
     fi
   fi
   # MODEL variable now holds either the selected fetched model or the manually entered one
@@ -213,7 +213,7 @@ configure_settings() {
   new_editor=$(gum input --header "Configure Editor" --placeholder "Enter preferred editor command (current: $current_editor)..." --value "$current_editor")
   # Update EDITOR only if gum input succeeded and value is not empty
   if [ $? -eq 0 ] && [ -n "$new_editor" ]; then
-      EDITOR="$new_editor"
+    EDITOR="$new_editor"
   fi
 
   # 4. Save Configuration
@@ -319,7 +319,7 @@ display_history() {
     elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
       # Use the specific model_used if available, otherwise fall back to the current $MODEL
       display_model_name="${model_used:-$MODEL}"
-      echo -e "\n\e[1m\e[35mAI ($display_model_name):\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
+      echo -e "\n\e[1m\e[35mAI ($display_model_name):\e[0m\e[0m"                   # Bold Purple for AI, showing specific model, with explicit reset
       echo -e "\e[1m\e[35m=============================================\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
       # Pipe the extracted content directly to bat, assuming jq -r decoded correctly
       echo "$content" | bat --language md --paging=never --style=plain --color=always
@@ -387,8 +387,8 @@ view_history() {
   # Ensure temp file is deleted on exit/interrupt
   trap 'rm -f "$temp_history_file" 2>/dev/null' EXIT INT TERM HUP
 
-  echo "# Chat History ($(date))" > "$temp_history_file"
-  echo "" >> "$temp_history_file"
+  echo "# Chat History ($(date))" >"$temp_history_file"
+  echo "" >>"$temp_history_file"
 
   # Iterate through history and format as Markdown
   for history_item_json in "${CHAT_HISTORY[@]}"; do
@@ -402,18 +402,18 @@ view_history() {
     content=$(echo "$message_json" | jq -r 'if .parts then .parts[0].text else .content end')
 
     if [[ "$role" == "user" ]]; then
-      echo "### You:" >> "$temp_history_file"
-      echo "" >> "$temp_history_file"
-      echo "$content" >> "$temp_history_file"
+      echo "### You:" >>"$temp_history_file"
+      echo "" >>"$temp_history_file"
+      echo "$content" >>"$temp_history_file"
     elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
       display_model_name="${model_used:-$MODEL}"
-      echo "### AI ($display_model_name):" >> "$temp_history_file"
-      echo "" >> "$temp_history_file"
-      echo "$content" >> "$temp_history_file" # Raw content, editor handles wrapping
+      echo "### AI ($display_model_name):" >>"$temp_history_file"
+      echo "" >>"$temp_history_file"
+      echo "$content" >>"$temp_history_file" # Raw content, editor handles wrapping
     fi
-    echo "" >> "$temp_history_file"
-    echo "---" >> "$temp_history_file" # Separator
-    echo "" >> "$temp_history_file"
+    echo "" >>"$temp_history_file"
+    echo "---" >>"$temp_history_file" # Separator
+    echo "" >>"$temp_history_file"
   done
 
   # Open the temp file in the configured editor
@@ -473,7 +473,7 @@ start_new_session() {
 
   case "$user_choice" in
   "/exit")
-    gum style --foreground "#FF0000" --bold "Exiting AI Help."
+    gum style --foreground "#FF0000" --bold "Exiting OliveOwl."
     exit 0
     ;;
   "/history")
@@ -833,7 +833,7 @@ main() {
     case "$user_input" in
     "/exit")
       is_command_handled=1
-      echo "Exiting AI Help."
+      echo "Exiting OliveOwl."
       break
       ;;
     "/new")
@@ -872,7 +872,7 @@ main() {
     "/view")
       is_command_handled=1
       view_history # Call the new function
-      continue # Skip API call for this turn
+      continue     # Skip API call for this turn
       ;;
 
     "")                    # Handle empty input
@@ -963,7 +963,7 @@ main() {
     interpreted_response=$(printf '%b' "$ai_response")
 
     # Display interpreted AI response using bat
-    echo -e "\n\e[1;35mAI ($MODEL):\e[0m" # Bold Purple for AI
+    echo -e "\n\e[1;35mAI ($MODEL):\e[0m"                                        # Bold Purple for AI
     echo -e "\e[1m\e[35m=============================================\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
     echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
 
