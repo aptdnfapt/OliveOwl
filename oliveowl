@@ -1072,22 +1072,23 @@ main() {
     while true; do
         local current_attempt_status # Status for the current try inside the loop
         local spinner_pid
+        local start_time end_time # Declare variables for timing
 
         # Start spinner in the background for this attempt
         gum spin --spinner dot --title "Waiting for AI response..." -- sleep infinity &
         spinner_pid=$!
-        # Ensure spinner for this attempt is killed if the script exits unexpectedly
-        # This trap will be redefined in each loop iteration and cleared at the end of it.
         trap 'kill $spinner_pid 2>/dev/null; trap - EXIT' EXIT
 
+        start_time=$(date +%s%N) # Capture start time in nanoseconds
+
         # Call the API synchronously in the foreground
-        # user_input is still in scope from the outer main loop
         ai_response=$(call_api "$user_input")
         current_attempt_status=$?
 
+        end_time=$(date +%s%N) # Capture end time in nanoseconds
+
         # Stop the spinner for this attempt
         kill $spinner_pid 2>/dev/null
-        # Clear the trap for this specific attempt; it will be reset if we loop again.
         trap - EXIT
 
         if [ $current_attempt_status -eq 0 ] && [ -n "$ai_response" ]; then
@@ -1146,6 +1147,34 @@ main() {
       continue
     fi
 
+    # --- Calculate and Display Token Speed ---
+    # This block runs only if the API call was ultimately successful (api_call_status == 0)
+    # and ai_response is populated. The start_time and end_time were set
+    # during the *last successful attempt* within the retry loop.
+
+    local time_taken_ns=$((end_time - start_time))
+    # Convert nanoseconds to seconds (float) for calculation. Use bc for precision.
+    # Ensure scale is sufficient for small time differences.
+    local time_taken_s=$(echo "scale=3; $time_taken_ns / 1000000000" | bc)
+
+    # Count words in the AI response
+    # `wc -w` counts words. Use process substitution to feed the response.
+    local word_count=$(echo -n "$ai_response" | wc -w)
+
+    local words_per_second="N/A" # Default if time_taken_s is zero or word_count is zero
+
+    # Avoid division by zero if time_taken_s is 0 or very close to 0, or if word_count is 0
+    # bc returns 0 if the result of division is less than its scale allows without truncation.
+    # We should check if time_taken_s is greater than a very small threshold like 0.001.
+    # A simpler check is if word_count > 0 and time_taken_s is not "0.000" (or similar for your scale)
+    if [ "$word_count" -gt 0 ] && [ "$(echo "$time_taken_s > 0.000" | bc -l)" -eq 1 ]; then
+        words_per_second=$(echo "scale=2; $word_count / $time_taken_s" | bc)
+    elif [ "$word_count" -gt 0 ] && [ "$time_taken_s" == "0.000" ]; then # Handle case where time is too short for bc with current scale
+        words_per_second="Effectively Instant (words: $word_count)"
+    fi
+    # --- End of Token Speed Calculation ---
+
+
     # Add AI response to history
     # Use the correct role based on the API provider for the response
     local response_role="assistant" # Default for OpenRouter
@@ -1173,6 +1202,10 @@ main() {
     echo -e "\n\e[1;35mAI ($MODEL):\e[0m"                                        # Bold Purple for AI
     echo -e "\e[1m\e[35m=============================================\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
     echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
+    # Display token speed (words per second)
+    # Use a different color for the speed, perhaps a subtle grey or cyan.
+    # \e[0;90m is dark grey. \e[0;36m is cyan.
+    echo -e "\e[0;90mSpeed: $words_per_second words/sec (Time: ${time_taken_s}s, Words: $word_count)\e[0m"
 
     # Handle command copying using the interpreted response
     handle_command_copying "$interpreted_response"
