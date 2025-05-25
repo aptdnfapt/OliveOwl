@@ -42,4 +42,10 @@ and then use colors on intial starting of the script use colors to make the comm
 (done dev2)
 19. in the mid of chatting with the ai if we change the model via /config it tends to make a new chat by prompting me to name the file but its not extected tho. cause in mid chat it should just continue the chat .
 (done dev2)
+
 20. nvim / any terminal editor added /view to get a great view on the chat (done dev2)
+21. ollama integration (done dev2)
+22. logging errors like a file . on .config/oliveowl/
+23. if any errors happens during chat it should ask users to retry or leave via gum choose . so give like 2 option after error to error  add a way to retry the same user propmpt  prompt if Error: API call failed.
+24. while looped copy feature so like after taking one copy it will prompt for more until cancel was chose  
+25. add a way to check token speed via timer aka how much time it took for the response to arive then time/token . it should be counted on client side  and not using api . and token speed means token or word / time it take for the output to arive 
