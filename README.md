@@ -27,6 +27,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   **Allows using `/config` in the initial session prompt or during chat to reconfigure API settings.**
 *   **Allows using `/view` during chat to open the current history in your configured editor.**
 *   Renders AI responses as Markdown using `bat`.
+*   **Enhanced History Preview:** The `/history` command now provides a full-screen `fzf` interface with a live preview of the JSON content of chat history files using `bat`.
 *   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `gum choose`.
 *   **Displays "token speed" (words per second) for each AI response, providing insight into response generation performance.**
 *   Configuration stored in `~/.config/oliveowl/`.
@@ -109,6 +110,12 @@ For other Unix-like systems (Arch Linux, macOS with Homebrew, etc.), please refe
     ```
     This saves your choices to `~/.config/oliveowl/config`.
 
+4.  **Change System Prompt (Optional):**
+    The AI's default behavior and instructions are defined by the `SYSTEM_PROMPT` variable within the `oliveowl` script itself. If you wish to customize the AI's persona or provide specific instructions for all interactions, you can directly edit the `SYSTEM_PROMPT` variable in the `oliveowl` file.
+    
+    Open the `oliveowl` script in your preferred text editor (vim,nano or vscode)
+    Locate the `SYSTEM_PROMPT` variable (around line 294) and modify its content. Ensure you maintain the triple-quote `"""` syntax for multi-line prompts.
+
 ## Usage
 
 Run the script:
@@ -124,7 +131,7 @@ The script will prompt you to enter a name for a new chat session, or you can ty
 
 *   `/exit`: Quit the current chat session.
 *   `/new`: Start a new chat session (prompts for an optional name).
-*   `/history`: Use `fzf` to select and load a previous chat session.
+*   `/history`: Use `fzf` to select and load a previous chat session, with a full-screen interface and a live preview of the JSON content using `bat`.
 *   `/config`: Re-run the API provider, model, and editor selection.
 *   `/view`: Open the current chat history in your configured editor (e.g., `nvim`, `vi`, `nano`).
 
