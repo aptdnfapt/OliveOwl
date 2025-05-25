@@ -209,18 +209,13 @@ configure_settings() {
       echo "Warning: OPENROUTER_API_KEY not set in $ENV_FILE. You will need it to use OpenRouter models." >&2
       # Continue fetching anyway, as the endpoint is public
     fi
-    echo "Fetching OpenRouter models..."
-    local openrouter_url="https://openrouter.ai/api/v1/models"
-    local openrouter_response=$(curl -s "$openrouter_url")
-    if [ $? -ne 0 ]; then
-      echo "Warning: curl command failed for OpenRouter. Using manual entry only." >&2
-    elif echo "$openrouter_response" | jq -e '.data' >/dev/null 2>&1; then
-      fetched_models=$(echo "$openrouter_response" | jq -r '.data[].id')
-      if [ -z "$fetched_models" ]; then
-        echo "Warning: No models found in OpenRouter response. Using manual entry only." >&2
-      fi
-    else
-      echo "Warning: Invalid JSON or missing 'data' in OpenRouter response. Using manual entry only." >&2
+    # The fetch_openrouter_models function handles its own "Fetching..." message and errors.
+    fetched_models=$(fetch_openrouter_models)
+    if [ $? -ne 0 ] || [ -z "$fetched_models" ]; then
+      # fetch_openrouter_models already prints detailed errors to stderr.
+      # This message just confirms fallback to manual entry.
+      echo "Warning: Using manual entry for OpenRouter models due to fetch error or no models found." >&2
+      fetched_models="" # Ensure it's empty so the manual entry path is taken later
     fi
     ;;
   "Ollama")
@@ -385,8 +380,8 @@ display_history() {
     elif [[ "$role" == "model" || "$role" == "assistant" ]]; then
       # Use the specific model_used if available, otherwise fall back to the current $MODEL
       display_model_name="${model_used:-$MODEL}"
-      echo -e "\n\e[1m\e[35mAI ($display_model_name):\e[0m\e[0m"                   # Bold Purple for AI, showing specific model, with explicit reset
-      echo -e "\e[1m\e[35m=============================================\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
+      echo -e "\n\e[1m\e[35mAI ($display_model_name):\e[0m"                   # Bold Purple for AI, showing specific model, with explicit reset
+      echo -e "\e[1m\e[35m=============================================\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
       # Pipe the extracted content directly to bat, assuming jq -r decoded correctly
       echo "$content" | bat --language md --paging=never --style=plain --color=always
     # Handle potential 'system' role if it ever gets stored/displayed (currently shouldn't)
@@ -1027,11 +1022,9 @@ main() {
     # Call the API with gum spinner (Method 2: Background API call)
     local ai_response
     local api_call_status
-    local temp_response_file=$(mktemp)
+    # local temp_response_file=$(mktemp) # Unused
     # Call the API with gum spinner (Method 2: Background API call)
-    local ai_response
     # Call the API with gum spinner (Method 1 variation: Background spinner, foreground API call)
-    local ai_response
     local api_call_status
     local spinner_pid
 
@@ -1084,7 +1077,7 @@ main() {
 
     # Display interpreted AI response using bat
     echo -e "\n\e[1;35mAI ($MODEL):\e[0m"                                        # Bold Purple for AI
-    echo -e "\e[1m\e[35m=============================================\e[0m\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
+    echo -e "\e[1m\e[35m=============================================\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
     echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
 
     # Handle command copying using the interpreted response
