@@ -23,7 +23,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   Uses `fzf` for selecting API provider and history files.
 *   Uses `gum choose` for selecting code blocks to copy.
 *   **Dynamically fetches and presents available models during configuration.**
-*   **Includes a loading spinner animation while waiting for AI responses.**
+*   **Includes a loading spinner animation while waiting for AI responses, with retry options on API call failure.**
 *   **Allows using `/config` in the initial session prompt or during chat to reconfigure API settings.**
 *   **Allows using `/view` during chat to open the current history in your configured editor.**
 *   Renders AI responses as Markdown using `bat`.
@@ -136,4 +136,4 @@ When prompted with `You:`, the script will open a minimal text editor using `gum
 
 **Code Block Copying:**
 
-If the AI includes Markdown code blocks (\`\`\`...\`\`\`) in its response, the script will detect them after the response is displayed. It will then launch `gum choose`, showing a numbered list of the detected blocks (displaying the first line of each). Select the block you want to copy using `gum choose`, and its full content will be copied to your clipboard. Press `Ctrl+C` or `Esc` to cancel copying.
+If the AI includes Markdown code blocks (\`\`\`...\`\`\`) in its response, the script will detect them after the response is displayed. It will then launch `gum choose`, showing a numbered list of the detected blocks (displaying the first line of each). You can select multiple blocks one after another. After copying a block, it will be removed from the list, and the prompt will reappear, allowing you to copy another. This loop continues until you select the "Stop Copy loop" option or all blocks have been copied.
