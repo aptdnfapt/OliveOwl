@@ -1019,36 +1019,86 @@ main() {
       continue
     fi
 
-    # Call the API with gum spinner (Method 2: Background API call)
-    local ai_response
-    local api_call_status
-    # local temp_response_file=$(mktemp) # Unused
-    # Call the API with gum spinner (Method 2: Background API call)
-    # Call the API with gum spinner (Method 1 variation: Background spinner, foreground API call)
-    local api_call_status
-    local spinner_pid
+    # Call the API with gum spinner and retry logic
+    local ai_response=""      # Initialize ai_response
+    local api_call_status=1   # Initialize to failure status (1 means error)
+                              # This variable will store the *final* status of the API call attempt(s).
 
-    # Start spinner in the background with a dummy command
-    gum spin --spinner dot --title "Waiting for AI response..." -- sleep infinity &
-    spinner_pid=$!
-    # Ensure spinner is killed on script exit or error
-    trap 'kill $spinner_pid 2>/dev/null' EXIT
+    # --- Start of API call retry loop ---
+    while true; do
+        local current_attempt_status # Status for the current try inside the loop
+        local spinner_pid
 
-    # Call the API synchronously in the foreground
-    ai_response=$(call_api "$user_input")
-    api_call_status=$?
+        # Start spinner in the background for this attempt
+        gum spin --spinner dot --title "Waiting for AI response..." -- sleep infinity &
+        spinner_pid=$!
+        # Ensure spinner for this attempt is killed if the script exits unexpectedly
+        # This trap will be redefined in each loop iteration and cleared at the end of it.
+        trap 'kill $spinner_pid 2>/dev/null; trap - EXIT' EXIT
 
-    # Stop the spinner explicitly
-    kill $spinner_pid 2>/dev/null
-    # Remove the trap so it doesn't try to kill again on normal exit
-    trap - EXIT
+        # Call the API synchronously in the foreground
+        # user_input is still in scope from the outer main loop
+        ai_response=$(call_api "$user_input")
+        current_attempt_status=$?
 
+        # Stop the spinner for this attempt
+        kill $spinner_pid 2>/dev/null
+        # Clear the trap for this specific attempt; it will be reset if we loop again.
+        trap - EXIT
+
+        if [ $current_attempt_status -eq 0 ] && [ -n "$ai_response" ]; then
+            # API call successful for this attempt
+            api_call_status=0 # Set final status to success
+            break # Exit the retry loop
+        else
+            # API call failed for this attempt
+            # The error message from call_api (e.g., "Error: Gemini API Error: ...")
+            # should have already been printed by the call_api function itself.
+            # We will add a general failure message before the gum choose prompt.
+
+            echo "Error: API call failed." # General notification for this attempt
+
+            local choice
+            # Use gum choose to ask the user if they want to retry or cancel.
+            # The header should clearly state the problem.
+            choice=$(gum choose "Retry" "Cancel" --header "API call failed. What would you like to do?")
+            local gum_choose_status=$? # Get exit status of gum choose
+
+            if [[ $gum_choose_status -ne 0 ]] || [[ "$choice" == "Cancel" ]]; then
+                # User chose Cancel or gum choose was cancelled (e.g., ESC or Ctrl+C)
+                echo "API call attempt cancelled by user."
+                ai_response=""    # Ensure ai_response is empty to signify overall failure/cancellation
+                api_call_status=1 # Keep final status as failure
+                exit 0
+            elif [[ "$choice" == "Retry" ]]; then
+                # User chose Retry
+                echo "Retrying API call for prompt: \"$user_input\""
+                # The 'while true' loop will continue, and call_api will be attempted again.
+                # No need to do anything else here, just let the loop iterate.
+                continue
+            fi
+        fi
+    done
+    # --- End of API call retry loop ---
+
+    # Check the final api_call_status after the retry loop has finished
     if [ $api_call_status -ne 0 ] || [ -z "$ai_response" ]; then
-      echo "Error: API call failed."
-      # Remove the last user message from history on failure? Optional.
-      if [ ${#CHAT_HISTORY[@]} -gt 0 ]; then # Check if history is not empty
-        unset 'CHAT_HISTORY[-1]'
+      # This block is entered if:
+      # 1. The initial API call failed AND the user chose "Cancel" in the retry prompt.
+      # 2. (Less likely) call_api returned status 0 but an empty response, and this somehow wasn't caught earlier.
+
+      # The "Error: API call failed." or "API call attempt cancelled by user." message
+      # would have been printed inside the loop.
+      # Now, handle the consequence: remove the user's prompt from history.
+      # This is because the user's input was added to CHAT_HISTORY *before* this API call block.
+      if [ ${#CHAT_HISTORY[@]} -gt 0 ]; then
+        unset 'CHAT_HISTORY[-1]' # Remove the last user message that failed
+        # Attempt to save history to reflect the removal
+        if ! save_history; then
+          echo "Warning: Failed to save history after cancelling/failing API call for the prompt." >&2
+        fi
       fi
+      # Continue to the next iteration of the main chat loop to get new user input.
       continue
     fi
 
