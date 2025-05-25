@@ -768,8 +768,8 @@ call_api() {
 handle_command_copying() {
   local ai_response="$1"
   local line
-  local -a copyable_items=() # Stores the full content of each block
-  local -a preview_items=()  # Stores the preview text for gum choose
+  local -a current_copyable_items=() # Stores the full content of each block
+  local -a current_preview_items=()  # Stores the preview text for gum choose
   local in_block=0
   local current_block=""
 
@@ -784,7 +784,7 @@ handle_command_copying() {
         # Use printf '%s' to avoid adding an extra newline at the end
         local full_block_content
         full_block_content=$(printf '%s' "$current_block")
-        copyable_items+=("$full_block_content")
+        current_copyable_items+=("$full_block_content")
 
         # --- Create the preview for gum choose ---
         local first_line
@@ -801,7 +801,7 @@ handle_command_copying() {
           fi
         fi
         # Add the formatted first line to the preview list
-        preview_items+=("$first_line")
+        current_preview_items+=("$first_line")
         # --- End preview creation ---
 
       fi
@@ -826,60 +826,104 @@ handle_command_copying() {
 
   # Note: Unterminated blocks (if the AI response ends mid-block) are ignored.
 
-  local count=${#copyable_items[@]}
+  if [ ${#current_copyable_items[@]} -eq 0 ]; then
+    # No code blocks found in the AI response, nothing to do.
+    # You might want to add a small message or just return silently.
+    # For now, returning silently is fine.
+    return
+  fi
 
-  # If items were found, prompt the user using gum choose
-  if [[ $count -gt 0 ]]; then
-    local gum_options=""
-    local selected_option
-    local cancel_option="-- CANCEL --" # Explicit cancel option text
+  # --- Start of the new copy loop ---
+  while true; do
+    if [ ${#current_copyable_items[@]} -eq 0 ]; then
+      echo ""
+      gum style "All available blocks copied from this response." --foreground "#00FF00" --bold
+      echo ""
+      break # Exit the loop, all items have been copied
+    fi
 
-    # Prepare options for gum choose (previews + Cancel), prepending index
-    for i in "${!preview_items[@]}"; do
-      # Prepend index and delimiter to the preview text
-      gum_options+="$i: ${preview_items[i]}\n"
+    local gum_options_string=""
+    local -a gum_display_previews=() # To hold previews for current gum prompt
+
+    # Prepare options for gum choose from *currently available* previews
+    for i in "${!current_preview_items[@]}"; do
+      # The user sees 0-indexed options for the *current* list
+      gum_display_previews+=("$i: ${current_preview_items[$i]}")
     done
-    gum_options+="$cancel_option" # Add the cancel option at the end
 
-    # Use gum choose to let the user select
-    # Capture selection; handle cancellation (Ctrl+C/Esc returns non-zero)
-    selected_option=$(printf "%b" "$gum_options" | gum choose --header "Select code block to copy:" --height "$((count + 2))") # Adjust height as needed
-    local gum_status=$?                                                                                                        # Capture gum exit status
+    local cancel_loop_option_text="Stop Copy loop"
+    # Add the cancel option to the display previews array as the last item
+    gum_display_previews+=("$cancel_loop_option_text")
 
-    # Check if gum was cancelled or if the user selected Cancel
-    if [[ $gum_status -ne 0 ]] || [[ "$selected_option" == "$cancel_option" ]] || [[ -z "$selected_option" ]]; then
+    # Convert array to newline-separated string for gum choose
+    gum_options_string=$(printf "%s\n" "${gum_display_previews[@]}")
+
+    local selected_option
+    local item_count=${#current_preview_items[@]}
+    # Dynamic height for gum choose: items + cancel_option + header_space
+    local gum_height=$((item_count + 2)) # +1 for cancel option, +1 for header
+    # Set min/max height for gum prompt (optional, but good for usability)
+    if [[ "$gum_height" -lt 3 ]]; then gum_height=3; fi
+    if [[ "$gum_height" -gt 15 ]]; then gum_height=15; fi
+
+
+    selected_option=$(printf "%b" "$gum_options_string" | gum choose --header "Select code block to copy (or cancel):" --height "$gum_height")
+    local gum_status=$? # Capture gum exit status
+
+    # Check if the user selected the cancel option or if gum choose was cancelled (e.g., Esc/Ctrl+C)
+    if [[ "$selected_option" == "$cancel_loop_option_text" ]] || [[ -z "$selected_option" ]]; then
       echo ""
-      gum style "Copy cancelled" --foreground "#FF0000" --bold
+      gum style "Exiting copy mode." --foreground "#FFFF00" --bold # Yellow for exiting
       echo ""
-
+      break # Exit the main copy loop
     else
-      # Extract the index from the beginning of the selected option string (e.g., "0: ...")
+      # Extract the index chosen by the user. This index is relative to the current list.
       local selected_index_str=$(echo "$selected_option" | cut -d':' -f1)
       local selected_index=-1
 
-      # Validate if the extracted part is a number
       if [[ "$selected_index_str" =~ ^[0-9]+$ ]]; then
         selected_index=$selected_index_str
       fi
 
-      # Check if the index is valid and within the bounds of the copyable_items array
-      if [[ $selected_index -ne -1 ]] && [[ $selected_index -lt ${#copyable_items[@]} ]]; then
-        local final_content="${copyable_items[selected_index]}"
-        # Copy the exact block content to clipboard
-        # Use printf '%s' to avoid adding extra newline by echo
-        printf '%s' "$final_content" | $CLIPBOARD_TOOL
+      # Validate selected_index (it should be valid if gum choose worked correctly)
+      if [[ $selected_index -ne -1 ]] && [[ $selected_index -lt ${#current_copyable_items[@]} ]]; then
+        local content_to_copy="${current_copyable_items[$selected_index]}"
+        # Get the preview text of the item being copied *before* removal for the message
+        local copied_preview_text="${current_preview_items[$selected_index]}"
+
+
+        printf '%s' "$content_to_copy" | $CLIPBOARD_TOOL
         echo ""
-        # Display the original preview text (without index) in the success message
-        local original_preview="${preview_items[selected_index]}"
-        gum style "Copied '$original_preview' to clipboard!" --foreground "#00FF00" --bold
+        # Use the stored preview for the message
+        gum style "Copied block: '${copied_preview_text}' to clipboard!" --foreground "#00FF00" --bold
         echo ""
+
+        # --- Remove the copied item from BOTH arrays ---
+        local temp_copyable=()
+        for i in "${!current_copyable_items[@]}"; do
+          if [[ $i -ne $selected_index ]]; then
+            temp_copyable+=("${current_copyable_items[$i]}")
+          fi
+        done
+        current_copyable_items=("${temp_copyable[@]}")
+        unset temp_copyable
+
+        local temp_previews=()
+        for i in "${!current_preview_items[@]}"; do
+          if [[ $i -ne $selected_index ]]; then
+            temp_previews+=("${current_preview_items[$i]}")
+          fi
+        done
+        current_preview_items=("${temp_previews[@]}")
+        unset temp_previews
+        # --- End of removal ---
       else
-        # Handle invalid index or parsing error
-        echo "Error: Invalid selection or failed to parse index. Copy failed."
+        echo "Error: Invalid selection. Returning to copy options." >&2
+        # Loop will continue, offering the (now potentially smaller) list again.
       fi
     fi
-  # If no blocks are found, simply don't show the prompt.
-  fi
+  done
+  # --- End of the new copy loop ---
 }
 
 # --- Main Chat Loop ---
