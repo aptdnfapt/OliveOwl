@@ -28,6 +28,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   **Allows using `/view` during chat to open the current history in your configured editor.**
 *   Renders AI responses as Markdown using `bat`.
 *   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `gum choose`.
+*   **Displays "token speed" (words per second) for each AI response, providing insight into response generation performance.**
 *   Configuration stored in `~/.config/oliveowl/`.
 *   Supports local Ollama instances, allowing you to use models running on your own machine.
 
@@ -137,3 +138,9 @@ When prompted with `You:`, the script will open a minimal text editor using `gum
 **Code Block Copying:**
 
 If the AI includes Markdown code blocks (\`\`\`...\`\`\`) in its response, the script will detect them after the response is displayed. It will then launch `gum choose`, showing a numbered list of the detected blocks (displaying the first line of each). You can select multiple blocks one after another. After copying a block, it will be removed from the list, and the prompt will reappear, allowing you to copy another. This loop continues until you select the "Stop Copy loop" option or all blocks have been copied.
+
+## Contribution
+
+We welcome your feedback and contributions! If you have suggestions, bug reports, or would like to contribute code, please feel free to open an issue or pull request.
+
+**Note on OpenAI Compatibility:** We plan to add compatibility for OpenAI models in the future. However, the developer currently lacks an OpenAI API key, which prevents testing and full implementation. Your contributions or feedback regarding OpenAI integration would be highly appreciated!
