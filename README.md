@@ -1,4 +1,4 @@
-# OliveOwl - Terminal AI Chat Assistant
+# OliveOwl - Terminal AI Chat Assistant (Gemini , OpenRouter , Ollama)
 
 ```
   ,-.   ,-.  
@@ -16,7 +16,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 
 ## Features
 
-*   Supports Google Gemini and OpenRouter compatible APIs.
+*   Supports Google Gemini, OpenRouter compatible APIs, and local Ollama models.
 *   Interactive chat loop in the terminal.
 *   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
 *   Allows naming chat sessions for easier history management.
@@ -29,6 +29,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   Renders AI responses as Markdown using `bat`.
 *   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `gum choose`.
 *   Configuration stored in `~/.config/oliveowl/`.
+*   Supports local Ollama instances, allowing you to use models running on your own machine.
 
 ## Dependencies
 
@@ -41,6 +42,7 @@ You need the following command-line tools installed:
 *   `bat` (for syntax highlighting/Markdown rendering)
 *   `gum` (for multi-line input editing and spinners)
 *   A clipboard tool: `xclip` (for X11) or `wl-copy` (for Wayland)
+*   **For Ollama users:** A running Ollama instance. See [Ollama's official website](https://ollama.com/) for installation instructions.
 
 Install them using your system's package manager. For example, on Debian/Ubuntu:
 ```bash
@@ -90,9 +92,15 @@ For other Unix-like systems (Arch Linux, macOS with Homebrew, etc.), please refe
     # ~/.config/oliveowl/.env
     GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
     OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY_HERE
+    # Ollama base URL (optional, defaults to http://localhost:11434 if not set)
+    # Example: OLLAMA_BASE_URL=http://my-ollama-server:11434
+    OLLAMA_BASE_URL=
     ```
-    Replace the placeholders with your actual keys. You only need the key for the provider(s) you intend to use. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
-3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider and model. The script will dynamically fetch available models for you to choose from using `fzf`.
+    Replace the placeholders with your actual keys. For Gemini and OpenRouter, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
+3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider (Gemini, OpenRouter, or Ollama) and model.
+    *   For Gemini and OpenRouter, the script will attempt to dynamically fetch available models.
+    *   For Ollama, the script will attempt to fetch models from your local Ollama instance (using the `OLLAMA_BASE_URL` if set, or the default `http://localhost:11434`). Ensure your Ollama instance is running and accessible.
+    The script uses `fzf` for selection.
     ```bash
     ./oliveowl.sh --config
     # or if added to PATH:
