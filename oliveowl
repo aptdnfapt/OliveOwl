@@ -50,8 +50,10 @@ setup_config() {
     echo "# Add your API keys here" >"$ENV_FILE"
     echo "GEMINI_API_KEY=" >>"$ENV_FILE"
     echo "OPENROUTER_API_KEY=" >>"$ENV_FILE"
+    echo "# Ollama base URL (e.g., http://localhost:11434)" >>"$ENV_FILE"
+    echo "OLLAMA_BASE_URL=" >>"$ENV_FILE"
     chmod 600 "$ENV_FILE" # Secure the file
-    echo "Please edit $ENV_FILE and add your API keys."
+    echo "Please edit $ENV_FILE and add your API keys and/or Ollama URL."
     # Optionally exit here or prompt user
   fi
 
@@ -66,9 +68,9 @@ setup_config() {
   set +a
 
   # Check if keys are set (basic check)
-  if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ]; then
-    echo "Warning: No API keys found in $ENV_FILE. Please add at least one." >&2
-    # Decide if we should exit or continue (maybe allow local-only mode later?)
+  if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "$OLLAMA_BASE_URL" ]; then
+    echo "Warning: No API keys (Gemini, OpenRouter) or OLLAMA_BASE_URL found in $ENV_FILE. Please configure at least one." >&2
+    # Decide if we should exit or continue
   fi
 
   # Load or create config file
@@ -107,12 +109,61 @@ fetch_openrouter_models() {
   echo "$models_json" | jq -r '.data[].id' | sort -u
 }
 
+# Function to fetch models from a local Ollama instance
+fetch_ollama_models() {
+  local ollama_url_base="${OLLAMA_BASE_URL:-http://localhost:11434}"
+  # Remove trailing slash if present
+  ollama_url_base=$(echo "$ollama_url_base" | sed 's:/*$::')
+  local models_api_url="${ollama_url_base}/api/tags"
+  local models_json
+
+  echo "Fetching models from Ollama at $ollama_url_base..." >&2
+  # Timeout curl after 5 seconds for local requests to avoid long hangs
+  models_json=$(curl --connect-timeout 5 -s "$models_api_url")
+
+  if [ $? -ne 0 ]; then
+    echo "Warning: curl command failed for Ollama. Is Ollama running and accessible at $ollama_url_base?" >&2
+    return 1
+  fi
+
+  if [ -z "$models_json" ]; then
+    echo "Warning: Received empty response from Ollama models API." >&2
+    return 1
+  fi
+
+  # Check for Ollama API errors (e.g., if the endpoint exists but returns an error object)
+  local ollama_error=$(echo "$models_json" | jq -r '.error // empty')
+  if [ -n "$ollama_error" ]; then
+    echo "Warning: Ollama API Error when fetching models: $ollama_error" >&2
+    return 1
+  fi
+
+  # Check if the 'models' array exists and is an array
+  if ! echo "$models_json" | jq -e '.models | type == "array"' >/dev/null 2>&1; then
+    echo "Warning: Invalid JSON or missing 'models' array in Ollama response." >&2
+    # echo "Ollama response: $models_json" >&2 # For debugging
+    return 1
+  fi
+
+  # Extract model names, filter out duplicates, sort
+  local extracted_models
+  extracted_models=$(echo "$models_json" | jq -r '.models[].name // empty' | sort -u | grep .) # grep . to remove empty lines if any
+
+  if [ -z "$extracted_models" ]; then
+    echo "Warning: No models found in Ollama response or failed to parse names." >&2
+    return 1 # Indicate no models found or parse error
+  fi
+
+  echo "$extracted_models"
+  return 0 # Success
+}
+
 configure_settings() {
   echo "--- OliveOwl Configuration ---"
 
   # 1. Select API Provider
-  local providers="Gemini\nOpenRouter"
-  API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=4 --layout=reverse) # Use fixed height
+  local providers="Gemini\nOpenRouter\nOllama" # Added Ollama
+  API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=5 --layout=reverse) # Use fixed height, adjusted for Ollama
 
   if [ -z "$API_PROVIDER" ]; then
     echo "Configuration cancelled."
@@ -170,6 +221,21 @@ configure_settings() {
       fi
     else
       echo "Warning: Invalid JSON or missing 'data' in OpenRouter response. Using manual entry only." >&2
+    fi
+    ;;
+  "Ollama")
+    # OLLAMA_BASE_URL from .env will be used by call_api and fetch_ollama_models.
+    # Check if OLLAMA_BASE_URL is set, if not, fetching will use default.
+    if [ -z "$OLLAMA_BASE_URL" ]; then
+      echo "Info: OLLAMA_BASE_URL not set in $ENV_FILE. Will attempt to fetch models from default http://localhost:11434." >&2
+    fi
+    fetched_ollama_models=$(fetch_ollama_models)
+    if [ $? -eq 0 ] && [ -n "$fetched_ollama_models" ]; then
+      fetched_models="$fetched_ollama_models"
+      echo "Successfully fetched Ollama models." >&2
+    else
+      echo "Warning: Could not fetch Ollama models. Using manual entry only." >&2
+      fetched_models="" # Ensure it's empty on failure
     fi
     ;;
   *)
@@ -638,6 +704,60 @@ call_api() {
       return 1
     fi
 
+  elif [[ "$API_PROVIDER" == "Ollama" ]]; then
+    # Use OLLAMA_BASE_URL from .env, default if not set or empty
+    local ollama_url_base="${OLLAMA_BASE_URL:-http://localhost:11434}"
+    # Remove trailing slash if present
+    ollama_url_base=$(echo "$ollama_url_base" | sed 's:/*$::')
+    api_url="${ollama_url_base}/api/chat"
+
+    # Ollama payload structure: { "model": "...", "messages": [...], "stream": false }
+    # Messages array should include system prompt, then history.
+    # create_api_message_json for "system" role:
+    local system_message_json=$(create_api_message_json "system" "$SYSTEM_PROMPT")
+
+    # history_json_array is already prepared with user/assistant messages
+    # in the correct format (like OpenRouter) by the common code at the start of call_api.
+    # Prepend system message to history_json_array
+    local messages_json_array_with_system=$(echo "$history_json_array" | jq --argjson sys_msg "$system_message_json" '[$sys_msg] + .')
+
+    payload=$(jq -n --arg model "$MODEL" --argjson messages "$messages_json_array_with_system" \
+      '{model: $model, messages: $messages, stream: false}')
+
+    # Make the curl request for Ollama
+    # No API key typically, but Content-Type is needed.
+    response=$(curl -s -X POST "$api_url" \
+      -H "Content-Type: application/json" \
+      -d "$payload")
+
+    # Parse Ollama response and handle errors
+    if [ $? -ne 0 ]; then
+      echo "Error: curl command failed for Ollama. Is Ollama running at $ollama_url_base?" >&2
+      return 1
+    fi
+
+    # Check for API errors in the response JSON (Ollama might return error in 'error' field)
+    error_message=$(echo "$response" | jq -r '.error // empty')
+    if [ -n "$error_message" ]; then
+      echo "Error: Ollama API Error: $error_message" >&2
+      # echo "Full Ollama Response: $response" >&2 # for debugging
+      return 1
+    fi
+
+    # Extract the text content. Ollama nests it under message -> content
+    response_text=$(echo "$response" | jq -r '.message.content // empty')
+
+    if [ -z "$response_text" ]; then
+      # Check if 'done' is false and 'message' is missing, could be an issue
+      local done_status=$(echo "$response" | jq -r '.done // "true"')
+      if [[ "$done_status" != "true" ]] && ! echo "$response" | jq -e '.message' > /dev/null; then
+         echo "Error: Ollama response incomplete or malformed (done: $done_status, no message content)." >&2
+      else
+         echo "Error: Could not extract text from Ollama response. It might be empty." >&2
+      fi
+      # echo "Full Ollama Response: $response" >&2 # for debugging
+      return 1
+    fi
   else
     echo "Error: Unknown API Provider '$API_PROVIDER'." >&2
     return 1
