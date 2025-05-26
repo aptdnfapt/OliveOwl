@@ -10,8 +10,8 @@
 This project was inspired by the Warp AI Terminal and developed with significant assistance from Gemini 2.5.
 
 Check out a video demonstration of OliveOwl here:
-[https://youtu.be/mkkkX1Grqs8](https://youtu.be/mkkkX1Grqs8)
-
+[1.0v](https://youtu.be/mkkkX1Grqs8)
+[2.0v](https://youtu.be/dUvcjOpBu6k)
 A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, easy command copying via `gum choose`, dynamic model selection, and a loading spinner.
 
 ## Features
