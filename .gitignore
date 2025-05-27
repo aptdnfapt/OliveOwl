@@ -1,7 +1,5 @@
-*.aider
+.aider*
 *.db
 *.out
 *.temp
 *_py
-.aider.chat.history.md  
-.aider.input.history
