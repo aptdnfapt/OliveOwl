@@ -38,6 +38,7 @@ check_dependency "jq"
 check_dependency "fzf"
 check_dependency "bat"
 check_dependency "gum" # Added gum dependency check
+check_dependency "bc"  # Added bc for calculations
 check_clipboard_tool   # Sets $CLIPBOARD_TOOL
 
 # --- Initial Setup ---
@@ -1053,19 +1054,20 @@ main() {
       local user_api_json=$(create_api_message_json "user" "$user_input")
       local user_history_item=$(jq -n --argjson msg "$user_api_json" --arg model "" \
         '{message_json: $msg, model_used: $model}' | jq -c .)
-      CHAT_HISTORY+=("$user_history_item")
-      # Save history immediately after adding user message
-      if ! save_history; then
-        echo "Warning: Failed to save history after user input." >&2
-      fi
-    # Skip API call if it was a command or empty input
-    else
-      continue
-    fi
+              CHAT_HISTORY+=("$user_history_item")
+              # Save history immediately after adding user message
+              if ! save_history; then
+                echo "Warning: Failed to save history after user input." >&2
+              fi
+            # Skip API call if it was a command or empty input
+            else
+              continue
+            fi
 
-    # Call the API with gum spinner and retry logic
-    local ai_response=""      # Initialize ai_response
-    local api_call_status=1   # Initialize to failure status (1 means error)
+            local start_time_ns=$(date +%s%N)
+            # Call the API with gum spinner and retry logic
+            local ai_response=""      # Initialize ai_response
+            local api_call_status=1   # Initialize to failure status (1 means error)
                               # This variable will store the *final* status of the API call attempt(s).
 
     # --- Start of API call retry loop ---
@@ -1125,6 +1127,26 @@ main() {
     done
     # --- End of API call retry loop ---
 
+    local end_time_ns=$(date +%s%N)
+    local word_count=0
+    local duration_s="0.000"
+    local wps="N/A"
+
+    if [ $api_call_status -eq 0 ] && [ -n "$ai_response" ]; then
+        local duration_ns=$((end_time_ns - start_time_ns))
+        # Ensure duration_ns is not negative
+        if [[ $duration_ns -lt 0 ]]; then duration_ns=0; fi
+        duration_s=$(echo "scale=3; $duration_ns / 1000000000" | bc)
+
+        word_count=$(echo "$ai_response" | wc -w)
+
+        if (( $(echo "$duration_s > 0.0001" | bc -l) )) && [ "$word_count" -gt 0 ]; then
+            wps=$(echo "scale=2; $word_count / $duration_s" | bc)
+        elif [ "$word_count" -gt 0 ]; then
+            wps=">10000 (near instant)"
+        fi
+    fi
+
     # Check the final api_call_status after the retry loop has finished
     if [ $api_call_status -ne 0 ] || [ -z "$ai_response" ]; then
       # This block is entered if:
@@ -1173,6 +1195,10 @@ main() {
     echo -e "\n\e[1;35mAI ($MODEL):\e[0m"                                        # Bold Purple for AI
     echo -e "\e[1m\e[35m=============================================\e[0m" # Bold Purple for AI, showing specific model, with explicit reset
     echo "$interpreted_response" | bat --language md --paging=never --style=plain --color=always
+
+    if [ $api_call_status -eq 0 ] && [ -n "$ai_response" ]; then
+        echo -e "\n\e[0;90mStats: ${duration_s}s | ${word_count} words | ${wps} words/sec\e[0m" # Grey color, single line
+    fi
 
     # Handle command copying using the interpreted response
     handle_command_copying "$interpreted_response"
