@@ -505,6 +505,7 @@ select_and_load_history() {
   if [ $? -eq 0 ] && [ -n "$chosen_file_path" ]; then
     # chosen_file_path already contains the full path to the selected file.
     # No need to reconstruct it.
+    clear # Clear the terminal screen
     load_history "$chosen_file_path" # load_history already prints messages
     display_history
     return 0 # Indicate success
