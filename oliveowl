@@ -50,6 +50,7 @@ setup_config() {
     echo "# Add your API keys here" >"$ENV_FILE"
     echo "GEMINI_API_KEY=" >>"$ENV_FILE"
     echo "OPENROUTER_API_KEY=" >>"$ENV_FILE"
+    echo "OPENAI_API_KEY=" >>"$ENV_FILE"
     echo "CEREBRAS_API_KEY=" >>"$ENV_FILE"
     echo "# Ollama base URL (e.g., http://localhost:11434)" >>"$ENV_FILE"
     echo "OLLAMA_BASE_URL=" >>"$ENV_FILE"
@@ -69,8 +70,8 @@ setup_config() {
   set +a
 
   # Check if keys are set (basic check)
-  if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "$CEREBRAS_API_KEY" ] && [ -z "$OLLAMA_BASE_URL" ]; then
-    echo "Warning: No API keys (Gemini, OpenRouter, Cerebras) or OLLAMA_BASE_URL found in $ENV_FILE. Please configure at least one." >&2
+  if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$CEREBRAS_API_KEY" ] && [ -z "$OLLAMA_BASE_URL" ]; then
+    echo "Warning: No API keys (Gemini, OpenRouter, OpenAI, Cerebras) or OLLAMA_BASE_URL found in $ENV_FILE. Please configure at least one." >&2
     # Decide if we should exit or continue
   fi
 
@@ -108,6 +109,48 @@ fetch_openrouter_models() {
   fi
   # Extract model IDs, filter out duplicates, sort
   echo "$models_json" | jq -r '.data[].id' | sort -u
+}
+
+fetch_openai_models() {
+  if [ -z "$OPENAI_API_KEY" ]; then
+    echo "Error: OPENAI_API_KEY not set in $ENV_FILE. Cannot fetch models." >&2
+    return 1
+  fi
+
+  local models_json
+  echo "Fetching models from OpenAI..." >&2
+  models_json=$(curl -s -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models)
+
+  if [ $? -ne 0 ] || [ -z "$models_json" ]; then
+    echo "Error: Failed to fetch models from OpenAI." >&2
+    return 1
+  fi
+
+  # Check for API errors
+  local openai_error=$(echo "$models_json" | jq -r '.error.message // empty')
+  if [ -n "$openai_error" ]; then
+    echo "Warning: OpenAI API Error when fetching models: $openai_error" >&2
+    return 1
+  fi
+
+  # Check if data array exists (like OpenAI)
+  if ! echo "$models_json" | jq -e '.data | type == "array"' >/dev/null 2>&1; then
+    echo "Warning: Invalid JSON or missing 'data' array in OpenAI models response." >&2
+    # echo "OpenAI response: $models_json" >&2 # For debugging
+    return 1
+  fi
+
+  # Extract model IDs, filter out duplicates, sort
+  local extracted_models
+  extracted_models=$(echo "$models_json" | jq -r '.data[].id // empty' | sort -u | grep .)
+
+  if [ -z "$extracted_models" ]; then
+    echo "Warning: No models found in OpenAI response or failed to parse names." >&2
+    return 1
+  fi
+
+  echo "$extracted_models"
+  return 0 # Success
 }
 
 fetch_cerebras_models() {
@@ -205,8 +248,8 @@ configure_settings() {
   echo "--- OliveOwl Configuration ---"
 
   # 1. Select API Provider
-  local providers="Gemini\nOpenRouter\nOllama\nCerebras" # Added Cerebras
-  API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=6 --layout=reverse) # Use fixed height, adjusted for Cerebras
+  local providers="Gemini\nOpenRouter\nOpenAI\nOllama\nCerebras" # Added OpenAI
+  API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=7 --layout=reverse) # Use fixed height, adjusted for OpenAI
 
   if [ -z "$API_PROVIDER" ]; then
     echo "Configuration cancelled."
@@ -259,6 +302,17 @@ configure_settings() {
       # This message just confirms fallback to manual entry.
       echo "Warning: Using manual entry for OpenRouter models due to fetch error or no models found." >&2
       fetched_models="" # Ensure it's empty so the manual entry path is taken later
+    fi
+    ;;
+  "OpenAI")
+    # The fetch_openai_models function handles its own "Fetching..." message and errors.
+    fetched_models=$(fetch_openai_models)
+    if [ $? -ne 0 ] || [ -z "$fetched_models" ]; then
+      # fetch_openai_models already prints detailed errors to stderr.
+      echo "Warning: Using manual entry for OpenAI models due to fetch error or no models found." >&2
+      fetched_models="" # Ensure it's empty so the manual entry path is taken later
+    else
+      echo "Successfully fetched OpenAI models." >&2
     fi
     ;;
   "Cerebras")
@@ -792,6 +846,46 @@ call_api() {
     if [ -z "$response_text" ]; then
       echo "Error: Could not extract text from OpenRouter response." >&2
       # echo "Full OpenRouter Response: $response" >&2 # for debugging
+      return 1
+    fi
+
+  elif [[ "$API_PROVIDER" == "OpenAI" ]]; then
+    api_key="$OPENAI_API_KEY"
+    api_url="https://api.openai.com/v1/chat/completions"
+
+    # OpenAI payload is like OpenRouter: { "model": "...", "messages": [...] }
+    local system_message_json=$(create_api_message_json "system" "$SYSTEM_PROMPT")
+    local messages_json_array_with_system=$(echo "$history_json_array" | jq --argjson sys_msg "$system_message_json" '[$sys_msg] + .')
+
+    payload=$(jq -n --arg model "$MODEL" --argjson messages "$messages_json_array_with_system" \
+      '{model: $model, messages: $messages}')
+
+    # Make the curl request for OpenAI
+    response=$(curl -s -X POST "$api_url" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $api_key" \
+      -d "$payload")
+
+    # Parse OpenAI response and handle errors
+    if [ $? -ne 0 ]; then
+      echo "Error: curl command failed for OpenAI." >&2
+      return 1
+    fi
+
+    # Check for API errors
+    error_message=$(echo "$response" | jq -r '.error.message // empty')
+    if [ -n "$error_message" ]; then
+      echo "Error: OpenAI API Error: $error_message" >&2
+      # echo "Full OpenAI Response: $response" >&2 # for debugging
+      return 1
+    fi
+
+    # Extract the text content. OpenAI nests it under choices -> message -> content
+    response_text=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+
+    if [ -z "$response_text" ]; then
+      echo "Error: Could not extract text from OpenAI response." >&2
+      # echo "Full OpenAI Response: $response" >&2 # for debugging
       return 1
     fi
 

@@ -1,4 +1,4 @@
-# OliveOwl - Terminal AI Chat Assistant (Gemini , OpenRouter , Cerebras, Ollama)
+# OliveOwl - Terminal AI Chat Assistant (Gemini , OpenRouter, OpenAI, Cerebras, Ollama)
 
 ```
   ,-.   ,-.  
@@ -16,7 +16,7 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 
 ## Features
 
-*   Supports Google Gemini, OpenRouter, Cerebras, and local Ollama models.
+*   Supports Google Gemini, OpenRouter, OpenAI, Cerebras, and local Ollama models.
 *   Interactive chat loop in the terminal.
 *   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
 *   Allows naming chat sessions for easier history management.
@@ -94,13 +94,14 @@ For other Unix-like systems (Arch Linux, macOS with Homebrew, etc.), please refe
     # ~/.config/oliveowl/.env
     GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
     OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY_HERE
+    OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
     CEREBRAS_API_KEY=YOUR_CEREBRAS_API_KEY_HERE
     # Ollama base URL (optional, defaults to http://localhost:11434 if not set)
     # Example: OLLAMA_BASE_URL=http://my-ollama-server:11434
     OLLAMA_BASE_URL=
     ```
-    Replace the placeholders with your actual keys. For Gemini, OpenRouter, and Cerebras, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
-3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider (Gemini, OpenRouter, Cerebras, or Ollama) and model.
+    Replace the placeholders with your actual keys. For Gemini, OpenRouter, OpenAI, and Cerebras, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
+3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider (Gemini, OpenRouter, OpenAI, Cerebras, or Ollama) and model.
     *   For Gemini and OpenRouter, the script will attempt to dynamically fetch available models.
     *   For Ollama, the script will attempt to fetch models from your local Ollama instance (using the `OLLAMA_BASE_URL` if set, or the default `http://localhost:11434`). Ensure your Ollama instance is running and accessible.
     The script uses `fzf` for selection.
@@ -150,5 +151,3 @@ If the AI includes Markdown code blocks (\`\`\`...\`\`\`) in its response, the s
 ## Contribution
 
 We welcome your feedback and contributions! If you have suggestions, bug reports, or would like to contribute code, please feel free to open an issue or pull request.
-
-**Note on OpenAI Compatibility:** We plan to add compatibility for OpenAI models in the future. However, the developer currently lacks an OpenAI API key, which prevents testing and full implementation. Your contributions or feedback regarding OpenAI integration would be highly appreciated!
