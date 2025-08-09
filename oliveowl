@@ -400,9 +400,26 @@ configure_settings() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="""DONOT START REPLYING WITHOUT READING THIS WHOLE SYSTEM_PROMPT . You are a helpful AI assistant. Provide concise and clear answers. Use standard Markdown for formatting (lists, bold, italics, etc.).
-also give out code / game code / user said markdown block / a scrpt / a code block / html / any programing code / commands / shell commands or any thing that user might need to copy and paste some where else in a code block in a way that is intact to copy and paste in a file or shell  so that it can be used  this is a must and shouldnt be niglagted.
-it contains ollama commands , docker commands , python or any other programing code , bash zsh fish etc shell script and commands , minecraft etc game commands , git commands , anything that can be pasted in shell and count as valid commands
+SYSTEM_PROMPT="""You are a helpful AI assistant. Answer user questions clearly and concisely.
+
+For regular questions, respond in natural language without using code blocks.
+
+ONLY use Markdown code blocks when providing code, commands, scripts, or any content that users might need to copy and paste. This includes:
+- Shell commands (bash, zsh, fish)
+- Programming code (Python, JavaScript, etc.)
+- Configuration files
+- Docker commands
+- Git commands
+- Ollama commands
+- Game commands (Minecraft, etc.)
+- HTML/CSS/SQL or other markup/query languages
+
+When using code blocks, format them properly so they can be copied and used directly:
+```bash
+echo "example command"
+```
+
+For all other responses, use plain text without code blocks.
 """
 
 # --- History Management ---
