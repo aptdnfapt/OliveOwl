@@ -19,8 +19,8 @@ A simple Bash script to interact with AI models (Gemini or OpenRouter) directly 
 *   Supports Google Gemini, OpenRouter, OpenAI, Cerebras, and local Ollama models.
 *   Interactive chat loop in the terminal.
 *   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
-*   Allows naming chat sessions for easier history management.
-*   Uses `fzf` for selecting API provider and history files.
+*   **Automatic Session Naming:** If you start a chat without giving it a name, the AI will automatically name the session based on the context of the conversation. The name is suggested after your first prompt and then refined every five prompts. Manually named sessions keep their original name.
+*   Uses `fzf` to display human-readable session names (instead of filenames) for easy history selection.
 *   Uses `gum choose` for selecting code blocks to copy.
 *   **Dynamically fetches and presents available models during configuration.**
 *   **Includes a loading spinner animation while waiting for AI responses, with retry options on API call failure.**
