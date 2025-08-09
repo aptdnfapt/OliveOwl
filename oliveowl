@@ -743,7 +743,7 @@ start_new_session() {
   fi
 
   case "$user_choice" in
-  "/exit")
+  "/exit" | "exit")
     gum style --foreground "#FF0000" --bold "Exiting OliveOwl."
     exit 0
     ;;
@@ -1416,7 +1416,7 @@ main() {
                 echo "API call attempt cancelled by user."
                 ai_response=""    # Ensure ai_response is empty to signify overall failure/cancellation
                 api_call_status=1 # Keep final status as failure
-                exit 0
+                break             # Break from the retry loop, do not exit the script
             elif [[ "$choice" == "Retry" ]]; then
                 # User chose Retry
                 echo "Retrying API call for prompt: \"$user_input\""
@@ -1547,7 +1547,9 @@ fi
 # Setup needs to run first to load config for main
 setup_config
 # Check EDITOR dependency after setup_config sets/loads it
-check_dependency "$EDITOR"
+# Extract just the command from the EDITOR variable (e.g., "nvim" from "nvim -R")
+read -r editor_command _ <<< "$EDITOR"
+check_dependency "$editor_command"
 main
 
 exit 0
