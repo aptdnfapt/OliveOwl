@@ -400,7 +400,8 @@ configure_settings() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT="""You are a helpful AI assistant. Answer user questions clearly and concisely.
+SYSTEM_PROMPT=$(cat <<'EOF'
+You are a helpful AI assistant. Answer user questions clearly and concisely.
 
 For regular questions, respond in natural language without using code blocks.
 
@@ -420,7 +421,8 @@ echo "example command"
 ```
 
 For all other responses, use plain text without code blocks.
-"""
+EOF
+)
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
