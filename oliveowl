@@ -585,7 +585,7 @@ select_and_load_history() {
     fzf --prompt="Select Chat Session to Load: " \
         --height=100% --layout=reverse \
         --delimiter='\t' --with-nth=1 \
-        --preview 'jq .messages {2} | bat --style=numbers --color=always --language=json --wrap=character' \
+        --preview 'echo {} | cut -f2 | xargs jq .messages | bat --style=numbers --color=always --language=json --wrap=character' \
         --preview-window=right:60%:wrap)
 
   # Check fzf exit status and if a selection was made
