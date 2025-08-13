@@ -50,7 +50,8 @@
 40. Performance timing and metrics (done)
 41. Shorthand commands for all functionality (/q, /h, /c, /v, /n, /ph, /p, /?) (done)
 42. Removed retry mechanism on API errors - drop back to prompt instead (done)
+43. Interactive provider key management in configuration (done)
 
 ## Future Plans
-42. Up arrow key support in gum write to recall previous prompts (partial implementation with /prompt-history command)
-43. Streaming output support for real-time response display (to be implemented)
+43. Up arrow key support in gum write to recall previous prompts (partial implementation with /prompt-history command)
+44. Streaming output support for real-time response display (to be implemented)

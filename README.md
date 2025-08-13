@@ -7,12 +7,13 @@
     “who?”
 ```
 
-This project was inspired by the Warp AI Terminal and developed with significant assistance from Gemini 2.5.
+This project was inspired by the Warp AI Terminal and developed with significant assistance from Gemini 2.5. 
+But turned out to be more of a terminal Alternative of web bassed bloated chat ui . 
 
 ### Check out a video demonstration of OliveOwl here:
 * 1.0v (https://youtu.be/mkkkX1Grqs8)
 * 2.0v (https://youtu.be/dUvcjOpBu6k)
-A simple Bash script to interact with AI models (Gemini or OpenRouter) directly from your terminal. It features chat history, Markdown rendering via `bat`, easy command copying via `gum choose`, dynamic model selection, and a loading spinner.
+A simple Bash script to interact with AI models (Google Gemini, OpenRouter, OpenAI, Cerebras, and Ollama) directly from your terminal. It features chat history, Markdown rendering via `bat`, easy command copying via `gum choose`, dynamic model selection, and a loading spinner.
 
 ## Features
 
@@ -72,38 +73,59 @@ For other Unix-like systems (Arch Linux, macOS with Homebrew, etc.), please refe
 
 *Note: `bat` might be called `batcat` on some systems (like Debian/Ubuntu). If so, you might need to create a symlink `sudo ln -s /usr/bin/batcat /usr/local/bin/bat` or adjust the script.*
 
-## Installation
+## Quick Start
 
-1.  **Clone or Download:** Get the `oliveowl.sh` script into a directory (e.g., `~/oliveowl`).
-2.  **Make Executable:**
-    ```bash
-    chmod +x oliveowl.sh
-    ```
-3.  **(Optional) Add to PATH:** For global access, move or link the script to a directory in your `$PATH`. A common place is `~/.local/bin`:
-    ```bash
-    mkdir -p ~/.local/bin
-    mv oliveowl.sh ~/.local/bin/oliveowl
-    ```
-    Ensure `~/.local/bin` is in your `$PATH` (check your `~/.profile` or `~/.bashrc`). You might need to restart your terminal or run `source ~/.profile`. After this, you can run the tool by just typing `oliveowl`.
+Install and run OliveOwl with a single command:
 
-## Configuration
+```bash
+# Download and install OliveOwl
+curl -sL https://raw.githubusercontent.com/aptdnfapt/OliveOwl/main/oliveowl -o ~/.local/bin/oliveowl && chmod +x ~/.local/bin/oliveowl
+
+# Make sure ~/.local/bin is in your PATH (if not already)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+
+# Run OliveOwl
+oliveowl
+```
+
+Alternatively, if you prefer `wget`:
+
+```bash
+# Download and install OliveOwl
+wget https://raw.githubusercontent.com/aptdnfapt/OliveOwl/main/oliveowl -O ~/.local/bin/oliveowl && chmod +x ~/.local/bin/oliveowl
+
+# Make sure ~/.local/bin is in your PATH (if not already)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+
+# Run OliveOwl
+oliveowl
+```
+
+That's it! OliveOwl is now installed and ready to use.
+
+**Note:** After running OliveOwl for the first time, use the `/config` command to add your API providers and select a model before you can start chatting.
+
+## Manual configuration details . ( no need to use this and can be done all this with /config )
 
 1.  **Create Config Directory (if needed):** The script attempts to create `~/.config/oliveowl` on first run, but you can create it manually: `mkdir -p ~/.config/oliveowl`
-2.  **Add API Keys:** Create or edit the environment file `~/.config/oliveowl/.env`. Add your API keys:
-    ```ini
-    # ~/.config/oliveowl/.env
-    GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
-    OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY_HERE
-    OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
-    CEREBRAS_API_KEY=YOUR_CEREBRAS_API_KEY_HERE
-    # Ollama base URL (optional, defaults to http://localhost:11434 if not set)
-    # Example: OLLAMA_BASE_URL=http://my-ollama-server:11434
-    OLLAMA_BASE_URL=
-    ```
-    Replace the placeholders with your actual keys. For Gemini, OpenRouter, OpenAI, and Cerebras, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
-3.  **Run Initial Config:** Run the script with the `--config` flag to select your API provider (Gemini, OpenRouter, OpenAI, Cerebras, or Ollama) and model.
-    *   For Gemini and OpenRouter, the script will attempt to dynamically fetch available models.
-    *   For Ollama, the script will attempt to fetch models from your local Ollama instance (using the `OLLAMA_BASE_URL` if set, or the default `http://localhost:11434`). Ensure your Ollama instance is running and accessible.
+2.  **Add API Keys:** You can add API keys in two ways:
+    *   **Manual Method:** Create or edit the environment file `~/.config/oliveowl/.env`. Add your API keys:
+        ```ini
+        # ~/.config/oliveowl/.env
+        GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+        OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY_HERE
+        OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
+        CEREBRAS_API_KEY=YOUR_CEREBRAS_API_KEY_HERE
+        # Ollama base URL (optional, defaults to http://localhost:11434 if not set)
+        # Example: OLLAMA_BASE_URL=http://my-ollama-server:11434
+        OLLAMA_BASE_URL=
+        ```
+        Replace the placeholders with your actual keys. For Gemini, OpenRouter, OpenAI, and Cerebras, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
+    *   **Interactive Method:** Use the configuration menu during setup or by typing `/config` in chat. Select "Add Provider" to interactively add API keys for any provider without manually editing files.
+3.  **Run Initial Config:** Run the script with the `--config` flag to access the configuration menu with three options: "Change Model", "Add Provider", and "Change Editor".
+    *   **Change Model:** Select your API provider (Gemini, OpenRouter, OpenAI, Cerebras, or Ollama) and model. For Gemini, OpenRouter, OpenAI, and Cerebras, the script will attempt to dynamically fetch available models if the API key is configured. For Ollama, the script will attempt to fetch models from your local Ollama instance (using the `OLLAMA_BASE_URL` if set, or the default `http://localhost:11434`). Ensure your Ollama instance is running and accessible.
+    *   **Add Provider:** Interactively add API keys for any provider without manually editing files.
+    *   **Change Editor:** Configure your preferred editor for viewing chat history.
     The script uses `fzf` for selection.
     ```bash
     ./oliveowl.sh --config
@@ -134,7 +156,7 @@ The script will prompt you to enter a name for a new chat session, or you can ty
 *   `/exit`: Quit the current chat session.
 *   `/new`: Start a new chat session (prompts for an optional name).
 *   `/history`: Use `fzf` to select and load a previous chat session, with a full-screen interface and a live preview of the JSON content using `bat`.
-*   `/config`: Re-run the API provider, model, and editor selection.
+*   `/config`: Access the configuration menu to change your API provider, model, add new providers, or change your editor.
 *   `/view`: Open the current chat history in your configured editor (e.g., `nvim`, `vi`, `nano`).
 
 **User Input:**

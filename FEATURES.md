@@ -28,6 +28,7 @@
 - `/new`, `/n` commands to start a new chat session
 - `/prompt-history`, `/ph`, `/p` commands to select from previous prompts
 - `/help`, `/?` commands to show help information
+- Interactive provider key management in configuration with gum choose
 
 ## History Management
 - JSON-based chat history storage
@@ -49,11 +50,12 @@
 - Loading spinner during API requests
 
 ## Configuration & Setup
-- Interactive configuration wizard
-- API key management through `.env` file
+- Interactive configuration wizard with provider key management
+- API key management through `.env` file with in-app addition
 - Editor configuration
 - Automatic dependency checking
 - Secure file permissions for config files
+- Missing key detection with automatic prompts to add
 
 ## Technical Features
 - Multi-line input support with `gum write`
