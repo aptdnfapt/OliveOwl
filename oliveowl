@@ -7,6 +7,8 @@ CONFIG_DIR="$HOME/.config/oliveowl"
 ENV_FILE="$CONFIG_DIR/.env"
 HISTORY_DIR="$CONFIG_DIR/history"
 CONFIG_FILE="$CONFIG_DIR/config"
+PROMPT_HISTORY_FILE="$CONFIG_DIR/prompt_history.txt"
+MAX_PROMPT_HISTORY=50
 
 # --- Dependency Checks ---
 check_dependency() {
@@ -44,6 +46,11 @@ check_clipboard_tool   # Sets $CLIPBOARD_TOOL
 setup_config() {
   mkdir -p "$CONFIG_DIR"
   mkdir -p "$HISTORY_DIR"
+  
+  # Create prompt history file if it doesn't exist
+  if [ ! -f "$PROMPT_HISTORY_FILE" ]; then
+    touch "$PROMPT_HISTORY_FILE"
+  fi
 
   if [ ! -f "$ENV_FILE" ]; then
     echo "Creating initial config file: $ENV_FILE"
@@ -396,6 +403,64 @@ configure_settings() {
   echo "  Model: $MODEL"
   echo "  Editor: $EDITOR"
   echo "Setup complete. You can now run '$0'." # Use $0 for the current script name
+}
+
+# --- Prompt History Functions ---
+# Save a prompt to history
+save_prompt_to_history() {
+  local prompt="$1"
+  if [ -n "$prompt" ]; then
+    # Add to history file
+    echo "$prompt" >> "$PROMPT_HISTORY_FILE"
+    
+    # Keep only the last MAX_PROMPT_HISTORY entries
+    if [ -f "$PROMPT_HISTORY_FILE" ]; then
+      tail -n "$MAX_PROMPT_HISTORY" "$PROMPT_HISTORY_FILE" > "$PROMPT_HISTORY_FILE.tmp"
+      mv "$PROMPT_HISTORY_FILE.tmp" "$PROMPT_HISTORY_FILE"
+    fi
+  fi
+}
+
+# Get previous prompt by index (1 = most recent)
+get_previous_prompt() {
+  local index=$1
+  if [ -f "$PROMPT_HISTORY_FILE" ] && [ "$index" -gt 0 ]; then
+    tail -n "$index" "$PROMPT_HISTORY_FILE" | head -n 1
+  fi
+}
+
+# Display prompt history and let user select
+select_from_prompt_history() {
+  if [ ! -f "$PROMPT_HISTORY_FILE" ] || [ ! -s "$PROMPT_HISTORY_FILE" ]; then
+    echo "No prompt history available."
+    return 1
+  fi
+  
+  # Create a numbered list of recent prompts
+  local history_items=()
+  local count=0
+  while IFS= read -r line; do
+    if [ -n "$line" ]; then
+      history_items+=("$line")
+      count=$((count + 1))
+    fi
+  done < <(tail -n "$MAX_PROMPT_HISTORY" "$PROMPT_HISTORY_FILE" | tac)
+  
+  if [ ${#history_items[@]} -eq 0 ]; then
+    echo "No prompt history available."
+    return 1
+  fi
+  
+  # Use gum choose to let user select from history
+  local selected
+  selected=$(printf '%s\n' "${history_items[@]}" | gum choose --header "Select a previous prompt (or press Esc to cancel):")
+  
+  if [ $? -eq 0 ] && [ -n "$selected" ]; then
+    echo "$selected"
+    return 0
+  else
+    return 1
+  fi
 }
 
 # --- System Prompt ---
@@ -1276,22 +1341,33 @@ main() {
   # If start_new_session exited or loaded history successfully, we proceed
 
   # Main loop
+# Variable to hold prompt history selection
+  local prompt_history_selected=""
+
   while true; do
-    # --- Read user input using gum write ---
-    local user_input=""
+    # --- Read user input with history support ---
+    local user_input=""    
     # Display prompt manually before calling gum
     printf '\n\e[1;34mYou:\e[0m\n' # Print "You:" prompt on its own line (Bold Blue)
+
+    # Check if we have prompt history and offer to use it
+    if [ -f "$PROMPT_HISTORY_FILE" ] && [ -s "$PROMPT_HISTORY_FILE" ]; then
+      printf "\e[2m(Hint: Type /prompt-history to select from previous prompts)\e[0m\n"
+    fi
 
     # Use gum write to capture multi-line input.
     # Set a placeholder to encourage input.
     # Capture output into user_input variable.
     # Check exit status to handle cancellation (e.g., Ctrl+C in gum write).
-    if ! user_input=$(gum write --placeholder "Enter your prompt (Ctrl+D or Esc to finish)..."); then
+    if ! user_input=$(gum write --value "$prompt_history_selected" --placeholder "Enter your prompt (Ctrl+D or Esc to finish)..."); then
       # gum write was cancelled (e.g., Ctrl+C)
       echo "Input cancelled."
       # Decide how to handle cancellation - exit or continue loop? Let's continue.
       continue
     fi
+    
+    # Clear the prompt history selection after use
+    prompt_history_selected=""
     # --- End of gum write input ---
 
     # Trim leading/trailing whitespace (optional, but often helpful)
@@ -1328,7 +1404,20 @@ main() {
       is_command_handled=1
       # Just attempt to load history, don't change session if cancelled
       select_and_load_history
-      continue # Skip API call for this turn
+      ;;
+    "/prompt-history")
+      is_command_handled=1
+      # Let user select from prompt history
+      local selected_prompt
+      if selected_prompt=$(select_from_prompt_history); then
+        # Pre-fill the next input with the selected prompt
+        prompt_history_selected="$selected_prompt"
+        # Continue to show the prompt again with pre-filled value
+        continue
+      else
+        echo "Prompt history selection cancelled."
+        continue  # Skip to next iteration
+      fi
       ;;
     "/config")
       is_command_handled=1
@@ -1361,6 +1450,9 @@ main() {
       # The "You:" prompt was already printed before gum write.
       # Just print the captured input. Use printf to handle potential special chars.
       printf '%s\n' "$user_input"
+      
+      # Save non-empty prompts to history
+      save_prompt_to_history "$user_input"
     fi
 
     # --- Prepare for API call ---
