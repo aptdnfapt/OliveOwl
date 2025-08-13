@@ -454,8 +454,9 @@ select_from_prompt_history() {
   # Use gum choose to let user select from history
   local selected
   selected=$(printf '%s\n' "${history_items[@]}" | gum choose --header "Select a previous prompt (or press Esc to cancel):")
+  local gum_status=$?
   
-  if [ $? -eq 0 ] && [ -n "$selected" ]; then
+  if [ $gum_status -eq 0 ] && [ -n "$selected" ]; then
     echo "$selected"
     return 0
   else
@@ -1354,15 +1355,13 @@ main() {
   fi
   # If start_new_session exited or loaded history successfully, we proceed
 
-  # Main loop
+# Main loop
 # Variable to hold prompt history selection
-  local prompt_history_selected=""
+local prompt_history_selected=""
 
-  while true; do
-# --- Read user input with history support ---
-    local user_input=""
-    local prompt_history_selected=""
-    
+while true; do
+  # --- Read user input with history support ---
+  local user_input=""    
     # Display prompt manually before calling gum
     printf '\n\e[1;34mYou:\e[0m\n' # Print "You:" prompt on its own line (Bold Blue)
 
