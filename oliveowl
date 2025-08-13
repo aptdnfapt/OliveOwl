@@ -260,7 +260,7 @@ configure_settings() {
 
   if [ -z "$API_PROVIDER" ]; then
     echo "Configuration cancelled."
-    exit 1
+    return 1
   fi
 
   # 2. Select Model
@@ -368,7 +368,7 @@ configure_settings() {
   # Handle fzf cancellation
   if [ -z "$MODEL" ]; then
     echo "Configuration cancelled."
-    exit 1
+    return 1
   fi
 
   # Check if manual entry was selected
@@ -378,7 +378,7 @@ configure_settings() {
     # Handle cancellation of gum input
     if [ $? -ne 0 ] || [ -z "$MODEL" ]; then
       echo "Manual entry cancelled or empty. Configuration cancelled."
-      exit 1
+      return 1
     fi
   fi
   # MODEL variable now holds either the selected fetched model or the manually entered one
@@ -1399,6 +1399,8 @@ while true; do
       ;;
     "/new"|"/n")
       is_command_handled=1
+      # Clear the terminal screen like /history does
+      clear
       # Prompt again for new session name, history load, or exit
       local new_status
       start_new_session
@@ -1432,15 +1434,17 @@ while true; do
     "/config"|"/c"|"/conf")
       is_command_handled=1
       echo "Switching to config..."
-      configure_settings # Re-run config
-      # Re-source config in case it changed
-      # Re-source config in case it changed
-      # Check if CONFIG_FILE exists before sourcing
-      if [ -f "$CONFIG_FILE" ]; then
-        source "$CONFIG_FILE"
+      if configure_settings; then
+        # Re-source config in case it changed
+        # Check if CONFIG_FILE exists before sourcing
+        if [ -f "$CONFIG_FILE" ]; then
+          source "$CONFIG_FILE"
+        fi
+        echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
+      else
+        echo "Configuration cancelled or failed. Continuing with current settings."
       fi
-      echo "Config updated. Provider: $API_PROVIDER, Model: $MODEL"
-      # After config, continue the current session with the new settings
+      # After config, continue the current session with the new settings or current settings
       continue
       ;;
     "/view"|"/v")
@@ -1491,78 +1495,36 @@ while true; do
       continue
     fi
 
-    # Call the API with gum spinner and retry logic
+    # Call the API with gum spinner (no retry logic)
     local ai_response=""      # Initialize ai_response
     local api_call_status=1   # Initialize to failure status (1 means error)
-                              # This variable will store the *final* status of the API call attempt(s).
+    local spinner_pid
+    local start_time end_time # Declare variables for timing
 
-    # --- Start of API call retry loop ---
-    while true; do
-        local current_attempt_status # Status for the current try inside the loop
-        local spinner_pid
-        local start_time end_time # Declare variables for timing
+    # Start spinner in the background
+    gum spin --spinner dot --title "Waiting for AI response..." -- sleep infinity &
+    spinner_pid=$!
+    trap 'kill $spinner_pid 2>/dev/null; trap - EXIT' EXIT
 
-        # Start spinner in the background for this attempt
-        gum spin --spinner dot --title "Waiting for AI response..." -- sleep infinity &
-        spinner_pid=$!
-        trap 'kill $spinner_pid 2>/dev/null; trap - EXIT' EXIT
+    # Record start time for token speed calculation
+    start_time=$(date +%s%N) # Nanoseconds for precision
 
-        start_time=$(date +%s%N) # Capture start time in nanoseconds
+    # Make the actual API call
+    ai_response=$(call_api "$final_user_input")
+    api_call_status=$? # Capture exit status immediately
 
-        # Call the API synchronously in the foreground
-        ai_response=$(call_api "$final_user_input")
-        current_attempt_status=$?
+    # Record end time
+    end_time=$(date +%s%N)
 
-        end_time=$(date +%s%N) # Capture end time in nanoseconds
+    # Stop spinner and clean up trap
+    kill $spinner_pid 2>/dev/null || true
+    trap - EXIT
 
-        # Stop the spinner for this attempt
-        kill $spinner_pid 2>/dev/null
-        trap - EXIT
-
-        if [ $current_attempt_status -eq 0 ] && [ -n "$ai_response" ]; then
-            # API call successful for this attempt
-            api_call_status=0 # Set final status to success
-            break # Exit the retry loop
-        else
-            # API call failed for this attempt
-            # The error message from call_api (e.g., "Error: Gemini API Error: ...")
-            # should have already been printed by the call_api function itself.
-            # We will add a general failure message before the gum choose prompt.
-
-            echo "Error: API call failed." # General notification for this attempt
-
-            local choice
-            # Use gum choose to ask the user if they want to retry or cancel.
-            # The header should clearly state the problem.
-            choice=$(gum choose "Retry" "Cancel" --header "API call failed. What would you like to do?")
-            local gum_choose_status=$? # Get exit status of gum choose
-
-            if [[ $gum_choose_status -ne 0 ]] || [[ "$choice" == "Cancel" ]]; then
-                # User chose Cancel or gum choose was cancelled (e.g., ESC or Ctrl+C)
-                echo "API call attempt cancelled by user."
-                ai_response=""    # Ensure ai_response is empty to signify overall failure/cancellation
-                api_call_status=1 # Keep final status as failure
-                break             # Break from the retry loop, do not exit the script
-            elif [[ "$choice" == "Retry" ]]; then
-                # User chose Retry
-                echo "Retrying API call for prompt: \"$user_input\""
-                # The 'while true' loop will continue, and call_api will be attempted again.
-                # No need to do anything else here, just let the loop iterate.
-                continue
-            fi
-        fi
-    done
-    # --- End of API call retry loop ---
-
-    # Check the final api_call_status after the retry loop has finished
+    # Check if API call failed
     if [ $api_call_status -ne 0 ] || [ -z "$ai_response" ]; then
-      # This block is entered if:
-      # 1. The initial API call failed AND the user chose "Cancel" in the retry prompt.
-      # 2. (Less likely) call_api returned status 0 but an empty response, and this somehow wasn't caught earlier.
-
-      # The "Error: API call failed." or "API call attempt cancelled by user." message
-      # would have been printed inside the loop.
-      # Now, handle the consequence: remove the user's prompt from history.
+      # API call failed
+      # The error message from call_api should have already been printed
+      echo "Error: API call failed. Returning to prompt."
       # Continue to the next iteration of the main chat loop to get new user input.
       continue
     fi
