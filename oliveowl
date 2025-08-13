@@ -463,6 +463,20 @@ select_from_prompt_history() {
   fi
 }
 
+# Display help information
+show_help() {
+  echo "OliveOwl Commands:"
+  echo "  /exit, /quit, /q    - Exit the application"
+  echo "  /history, /h        - Load previous chat sessions"
+  echo "  /config, /c         - Complete configuration (API + editor + other settings)"
+  echo "  /editor, /e         - View current chat in editor"
+  echo "  /new, /n            - Start a new chat session"
+  echo "  /prompt-history, /ph, /p - Select from previous prompts"
+  echo "  /help, /?           - Show this help message"
+  echo ""
+  echo "All commands must be the only text in your input to be recognized."
+}
+
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
 SYSTEM_PROMPT=$(cat <<'EOF'
@@ -1382,12 +1396,12 @@ main() {
     # Commands must be the entire input now, not just the first line.
     local is_command_handled=0 # Flag to check if a command was processed
     case "$user_input" in
-    "/exit")
+    "/exit"|"/quit"|"/q")
       is_command_handled=1
       echo "Exiting OliveOwl."
       break
       ;;
-    "/new")
+    "/new"|"/n")
       is_command_handled=1
       # Prompt again for new session name, history load, or exit
       local new_status
@@ -1400,12 +1414,12 @@ main() {
       fi
       continue # Skip API call for this turn
       ;;
-    "/history")
+    "/history"|"/h"|"/hist")
       is_command_handled=1
       # Just attempt to load history, don't change session if cancelled
       select_and_load_history
       ;;
-    "/prompt-history")
+    "/prompt-history"|"/ph"|"/p")
       is_command_handled=1
       # Let user select from prompt history
       local selected_prompt
@@ -1419,7 +1433,7 @@ main() {
         continue  # Skip to next iteration
       fi
       ;;
-    "/config")
+    "/config"|"/c"|"/conf")
       is_command_handled=1
       echo "Switching to config..."
       configure_settings # Re-run config
@@ -1433,10 +1447,15 @@ main() {
       # After config, continue the current session with the new settings
       continue
       ;;
-    "/view")
+    "/editor"|"/e")
       is_command_handled=1
       view_history # Call the new function
       continue     # Skip API call for this turn
+      ;;
+    "/help"|"/?")
+      is_command_handled=1
+      show_help
+      continue
       ;;
 
     "")                    # Handle empty input

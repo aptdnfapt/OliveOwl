@@ -21,11 +21,13 @@
 ## User Interface & Experience
 - Colorful ASCII art welcome screen
 - Colored prompts (You: in blue, AI: in purple)
-- `/exit` command to quit the chat
-- `/history` command to load previous chats with fzf interface
-- `/config` command to reconfigure API settings
-- `/view` command to open chat history in configured editor
-- `/new` command to start a new chat session
+- `/exit`, `/quit`, `/q` commands to quit the chat
+- `/history`, `/h` commands to load previous chats with fzf interface
+- `/config`, `/c` commands for complete configuration (API + editor + other settings)
+- `/editor`, `/e` commands to open chat history in configured editor
+- `/new`, `/n` commands to start a new chat session
+- `/prompt-history`, `/ph`, `/p` commands to select from previous prompts
+- `/help`, `/?` commands to show help information
 
 ## History Management
 - JSON-based chat history storage

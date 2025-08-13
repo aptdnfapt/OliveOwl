@@ -48,8 +48,9 @@
 38. Session continuity when changing models (done)
 39. Enhanced error messages and debugging (done)
 40. Performance timing and metrics (done)
+41. Shorthand commands for all functionality (/q, /h, /c, /e, /n, /ph, /p, /?) (done)
 
 ## Future Plans
-41. Up arrow key support in gum write to recall previous prompts (partial implementation with /prompt-history command)
-42. Streaming output support for real-time response display (to be implemented)
-43. Remove retry mechanism since up arrow key can be used for retry (to be implemented)
+42. Up arrow key support in gum write to recall previous prompts (partial implementation with /prompt-history command)
+43. Streaming output support for real-time response display (to be implemented)
+44. Remove retry mechanism since shorthand commands provide better alternatives (to be implemented)
