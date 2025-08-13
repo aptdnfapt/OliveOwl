@@ -254,13 +254,100 @@ fetch_ollama_models() {
 configure_settings() {
   echo "--- OliveOwl Configuration ---"
 
-  # 1. Select API Provider
-  local providers="Gemini\nOpenRouter\nOpenAI\nOllama\nCerebras" # Added OpenAI
-  API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=7 --layout=reverse) # Use fixed height, adjusted for OpenAI
+  # 1. Select Configuration Option
+  local config_options="Change Model\nAdd Provider\nChange Editor"
+  local selected_option=$(echo -e "$config_options" | fzf --prompt="Select Configuration Option: " --height=5 --layout=reverse)
+
+  if [ -z "$selected_option" ]; then
+    echo "Configuration cancelled."
+    return 1
+  fi
+
+  # Handle Add Provider option
+  if [[ "$selected_option" == "Add Provider" ]]; then
+    add_provider
+    # After adding provider, return to continue with previous flow
+    return 0
+  elif [[ "$selected_option" == "Change Editor" ]]; then
+    # Handle Change Editor option
+    local current_editor=${EDITOR:-vi}
+    local new_editor
+    new_editor=$(gum input --header "Configure Editor" --placeholder "Enter preferred editor command (current: $current_editor)..." --value "$current_editor")
+    if [ $? -eq 0 ] && [ -n "$new_editor" ]; then
+      EDITOR="$new_editor"
+    fi
+    # Save editor configuration
+    echo "Saving editor configuration..."
+    if [ -f "$CONFIG_FILE" ]; then
+      # Update existing config file with new editor
+      sed -i "s|^EDITOR=.*|EDITOR=\"$EDITOR\"|" "$CONFIG_FILE"
+    else
+      # Create new config file with editor setting
+      echo "API_PROVIDER=\"$API_PROVIDER\"" >"$CONFIG_FILE"
+      echo "MODEL=\"$MODEL\"" >>"$CONFIG_FILE"
+      echo "EDITOR=\"$EDITOR\"" >>"$CONFIG_FILE"
+    fi
+    echo "Editor configuration saved."
+    return 0
+  fi
+
+  # 2. Select API Provider (for Change Model or Add Provider paths)
+  local providers="Gemini\nOpenRouter\nOpenAI\nOllama\nCerebras"
+  API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=7 --layout=reverse)
 
   if [ -z "$API_PROVIDER" ]; then
     echo "Configuration cancelled."
     return 1
+  fi
+
+  # Check if API key exists for selected provider and prompt to add if missing
+  local api_key_exists=true
+  case "$API_PROVIDER" in
+    "Gemini")
+      if [ -z "$GEMINI_API_KEY" ]; then
+        api_key_exists=false
+      fi
+      ;;
+    "OpenRouter")
+      if [ -z "$OPENROUTER_API_KEY" ]; then
+        api_key_exists=false
+      fi
+      ;;
+    "OpenAI")
+      if [ -z "$OPENAI_API_KEY" ]; then
+        api_key_exists=false
+      fi
+      ;;
+    "Cerebras")
+      if [ -z "$CEREBRAS_API_KEY" ]; then
+        api_key_exists=false
+      fi
+      ;;
+    "Ollama")
+      # For Ollama, check if URL is set
+      if [ -z "$OLLAMA_BASE_URL" ]; then
+        api_key_exists=false
+      fi
+      ;;
+  esac
+
+  if [ "$api_key_exists" = false ]; then
+    echo "API key/URL not found for $API_PROVIDER."
+    local add_key_choice
+    add_key_choice=$(gum choose --header "Add $API_PROVIDER configuration?" "Yes" "No")
+    
+    if [ "$add_key_choice" = "Yes" ]; then
+      add_provider_key "$API_PROVIDER"
+      # Reload environment variables
+      set -a
+      if [ -f "$ENV_FILE" ]; then
+        source "$ENV_FILE"
+      fi
+      set +a
+    else
+      # If user chooses not to add key, continue but warn them
+      echo "Warning: You may not be able to use $API_PROVIDER without configuration."
+    fi
   fi
 
   # 2. Select Model
@@ -394,9 +481,20 @@ configure_settings() {
 
   # 4. Save Configuration
   echo "Saving configuration..."
-  echo "API_PROVIDER=\"$API_PROVIDER\"" >"$CONFIG_FILE"
-  echo "MODEL=\"$MODEL\"" >>"$CONFIG_FILE"
-  echo "EDITOR=\"$EDITOR\"" >>"$CONFIG_FILE" # Save editor setting
+  if [ -f "$CONFIG_FILE" ]; then
+    # Update existing config file
+    sed -i "s|^API_PROVIDER=.*|API_PROVIDER=\"$API_PROVIDER\"|" "$CONFIG_FILE"
+    sed -i "s|^MODEL=.*|MODEL=\"$MODEL\"|" "$CONFIG_FILE"
+    # Only update editor if it doesn't exist or is empty
+    if ! grep -q "^EDITOR=" "$CONFIG_FILE" || [ -z "$(grep "^EDITOR=" "$CONFIG_FILE" | cut -d'=' -f2)" ]; then
+      echo "EDITOR=\"$EDITOR\"" >>"$CONFIG_FILE"
+    fi
+  else
+    # Create new config file
+    echo "API_PROVIDER=\"$API_PROVIDER\"" >"$CONFIG_FILE"
+    echo "MODEL=\"$MODEL\"" >>"$CONFIG_FILE"
+    echo "EDITOR=\"$EDITOR\"" >>"$CONFIG_FILE"
+  fi
 
   echo "Configuration saved to $CONFIG_FILE:"
   echo "  Provider: $API_PROVIDER"
@@ -417,6 +515,122 @@ save_prompt_to_history() {
     if [ -f "$PROMPT_HISTORY_FILE" ]; then
       tail -n "$MAX_PROMPT_HISTORY" "$PROMPT_HISTORY_FILE" > "$PROMPT_HISTORY_FILE.tmp"
       mv "$PROMPT_HISTORY_FILE.tmp" "$PROMPT_HISTORY_FILE"
+    fi
+  fi
+}
+
+# --- Provider Management Functions ---
+# Add a new API provider and key
+add_provider() {
+  while true; do
+    echo "Add Provider selected."
+    
+    # Select provider
+    local providers="Gemini\nOpenRouter\nOpenAI\nCerebras\nOllama"
+    local selected_provider=$(echo -e "$providers" | fzf --prompt="Select Provider to Add: " --height=7 --layout=reverse)
+    
+    if [ -z "$selected_provider" ]; then
+      echo "Provider selection cancelled."
+      break
+    fi
+    
+    add_provider_key "$selected_provider"
+    
+    # Ask if user wants to add another provider
+    echo ""
+    local add_another
+    add_another=$(gum choose --header "Add another provider?" "Yes" "No")
+    
+    if [ "$add_another" != "Yes" ]; then
+      break
+    fi
+  done
+  
+  # Reload environment variables
+  set -a
+  if [ -f "$ENV_FILE" ]; then
+    source "$ENV_FILE"
+  fi
+  set +a
+  
+  return 0
+}
+
+# Add API key or URL for a specific provider
+add_provider_key() {
+  local selected_provider="$1"
+  local api_key=""
+  local env_var_name=""
+  
+  # Handle Ollama differently (URL instead of API key)
+  if [[ "$selected_provider" == "Ollama" ]]; then
+    local ollama_url
+    ollama_url=$(gum input --header "Ollama Configuration" --placeholder "Enter Ollama base URL (e.g., http://localhost:11434)...")
+    if [ $? -eq 0 ] && [ -n "$ollama_url" ]; then
+      # Update .env file with OLLAMA_BASE_URL
+      if [ -f "$ENV_FILE" ]; then
+        # Check if OLLAMA_BASE_URL already exists
+        if grep -q "^OLLAMA_BASE_URL=" "$ENV_FILE"; then
+          # Update existing OLLAMA_BASE_URL
+          sed -i "s|^OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=$ollama_url|" "$ENV_FILE"
+        else
+          # Add new OLLAMA_BASE_URL
+          echo "OLLAMA_BASE_URL=$ollama_url" >>"$ENV_FILE"
+        fi
+      else
+        # Create new .env file
+        echo "# Add your API keys here" >"$ENV_FILE"
+        echo "GEMINI_API_KEY=" >>"$ENV_FILE"
+        echo "OPENROUTER_API_KEY=" >>"$ENV_FILE"
+        echo "OPENAI_API_KEY=" >>"$ENV_FILE"
+        echo "CEREBRAS_API_KEY=" >>"$ENV_FILE"
+        echo "OLLAMA_BASE_URL=$ollama_url" >>"$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+      fi
+      echo "Ollama URL saved to $ENV_FILE"
+      return 0
+    else
+      echo "Ollama configuration cancelled."
+      return 1
+    fi
+  else
+    # Handle other providers (API keys)
+    case "$selected_provider" in
+      "Gemini") env_var_name="GEMINI_API_KEY" ;;
+      "OpenRouter") env_var_name="OPENROUTER_API_KEY" ;;
+      "OpenAI") env_var_name="OPENAI_API_KEY" ;;
+      "Cerebras") env_var_name="CEREBRAS_API_KEY" ;;
+    esac
+    
+    # Input API key securely
+    api_key=$(gum input --header "$selected_provider API Key" --placeholder "Enter your $selected_provider API key..." --password)
+    if [ $? -eq 0 ] && [ -n "$api_key" ]; then
+      # Update .env file with API key
+      if [ -f "$ENV_FILE" ]; then
+        # Check if the API key variable already exists
+        if grep -q "^$env_var_name=" "$ENV_FILE"; then
+          # Update existing API key
+          sed -i "s|^$env_var_name=.*|$env_var_name=$api_key|" "$ENV_FILE"
+        else
+          # Add new API key
+          echo "$env_var_name=$api_key" >>"$ENV_FILE"
+        fi
+      else
+        # Create new .env file
+        echo "# Add your API keys here" >"$ENV_FILE"
+        echo "GEMINI_API_KEY=" >>"$ENV_FILE"
+        echo "OPENROUTER_API_KEY=" >>"$ENV_FILE"
+        echo "OPENAI_API_KEY=" >>"$ENV_FILE"
+        echo "CEREBRAS_API_KEY=" >>"$ENV_FILE"
+        echo "OLLAMA_BASE_URL=" >>"$ENV_FILE"
+        echo "$env_var_name=$api_key" >>"$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+      fi
+      echo "$selected_provider API key saved to $ENV_FILE"
+      return 0
+    else
+      echo "API key input cancelled."
+      return 1
     fi
   fi
 }
