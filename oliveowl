@@ -570,8 +570,21 @@ select_and_load_history() {
     fi
     local session_name
     session_name=$(jq -r '.session_name' "$file_path")
+    
+    # If multiple files have the same session name, append filename to make them unique
+    local display_name="$session_name"
+    local basename=$(basename "$file_path" .json)
+    # For chat files, extract the timestamp part to make it more readable
+    if [[ $basename =~ chat_([0-9]{8}_[0-9]{6}) ]]; then
+      local timestamp="${BASH_REMATCH[1]}"
+      display_name="$session_name ($timestamp)"
+    else
+      # For other files, use the full basename
+      display_name="$session_name ($basename)"
+    fi
+    
     # Store "Session Name" and "File Path" separated by a tab for fzf
-    fzf_input+="$(printf "%s\t%s\n" "$session_name" "$file_path")"
+    fzf_input+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
   done
 
   if [ -z "$fzf_input" ]; then
@@ -579,13 +592,17 @@ select_and_load_history() {
     return 1
   fi
 
+  # Debug: show what fzf_input looks like
+  # echo "DEBUG fzf_input:" >&2
+  # echo "$fzf_input" >&2
+
   # Use fzf to select a session.
   local selected_line
   selected_line=$(echo -e "$fzf_input" |
     fzf --prompt="Select Chat Session to Load: " \
         --height=100% --layout=reverse \
         --delimiter='\t' --with-nth=1 \
-        --preview 'echo {} | cut -f2 | xargs jq .messages | bat --style=numbers --color=always --language=json --wrap=character' \
+        --preview 'echo {} | cut -f2 | sed "s/'\''//g" | xargs -r jq .messages 2>/dev/null | bat --style=numbers --color=always --language=json --wrap=character' \
         --preview-window=right:60%:wrap)
 
   # Check fzf exit status and if a selection was made
