@@ -24,7 +24,7 @@
 - `/exit`, `/quit`, `/q` commands to quit the chat
 - `/history`, `/h` commands to load previous chats with fzf interface
 - `/config`, `/c` commands for complete configuration (API + editor + other settings)
-- `/editor`, `/e` commands to open chat history in configured editor
+- `/view`, `/v` commands to open chat history in configured editor
 - `/new`, `/n` commands to start a new chat session
 - `/prompt-history`, `/ph`, `/p` commands to select from previous prompts
 - `/help`, `/?` commands to show help information
