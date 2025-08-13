@@ -8,7 +8,7 @@
 - Dynamic model selection with automatic fetching
 - Configuration management with `.env` file
 - Loading spinner animation during API calls
-- Retry mechanism for failed API calls
+- Drop back to prompt on API errors (no retry mechanism)
 - Session naming and history management
 
 ## AI Provider Support
@@ -67,4 +67,3 @@
 ## Future Enhancements
 - Up arrow key support in input editor to recall previous prompts
 - Streaming output for real-time response display
-- Simplified retry mechanism using prompt history instead of dedicated retry loop
