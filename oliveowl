@@ -255,7 +255,7 @@ configure_settings() {
   echo "--- OliveOwl Configuration ---"
 
   # 1. Select Configuration Option
-  local config_options="Change Model\nAdd Provider\nChange Editor"
+  local config_options="Change Model\nAdd Provider\nChange Editor\nEdit Instructions"
   local selected_option=$(echo -e "$config_options" | fzf --prompt="Select Configuration Option: " --height=5 --layout=reverse)
 
   if [ -z "$selected_option" ]; then
@@ -288,6 +288,12 @@ configure_settings() {
       echo "EDITOR=\"$EDITOR\"" >>"$CONFIG_FILE"
     fi
     echo "Editor configuration saved."
+    return 0
+  elif [[ "$selected_option" == "Edit Instructions" ]]; then
+    # Handle Edit Instructions option
+    local instructions_file="$CONFIG_DIR/extra_instructions.txt"
+    "$EDITOR" "$instructions_file"
+    echo "Instructions saved."
     return 0
   fi
 
@@ -694,7 +700,8 @@ show_help() {
 
 # --- System Prompt ---
 # Instructs the AI on formatting and behavior
-SYSTEM_PROMPT=$(cat <<'EOF'
+load_system_prompt() {
+  local base_prompt=$(cat <<'EOF'
 You are a helpful AI assistant. Answer user questions clearly and concisely.
 
 For regular questions, respond in natural language without using code blocks.
@@ -717,6 +724,17 @@ echo "example command"
 For all other responses, use plain text without code blocks.
 EOF
 )
+
+  local instructions_file="$CONFIG_DIR/extra_instructions.txt"
+  if [ -f "$instructions_file" ] && [ -s "$instructions_file" ]; then
+    local extra_instructions=$(cat "$instructions_file")
+    echo -e "$base_prompt\n\nAdditional Instructions:\n$extra_instructions"
+  else
+    echo "$base_prompt"
+  fi
+}
+
+SYSTEM_PROMPT=$(load_system_prompt)
 
 # --- History Management ---
 CHAT_HISTORY=() # In-memory array of JSON objects for the current session
@@ -1089,6 +1107,9 @@ start_new_session() {
 call_api() {
   local user_input="$1"
   local api_url api_key payload response response_text error_message
+
+  # Reload the system prompt to include any updated instructions
+  SYSTEM_PROMPT=$(load_system_prompt)
 
   # 1. Prepare payload: Convert history messages to the format required by the CURRENT API provider
   local converted_messages=()
