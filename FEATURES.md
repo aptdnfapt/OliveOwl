@@ -10,6 +10,7 @@
 - Loading spinner animation during API calls
 - Drop back to prompt on API errors (no retry mechanism)
 - Session naming and history management
+- Customizable system prompt with extra instructions
 
 ## AI Provider Support
 - **Google Gemini** - Full API integration with automatic model fetching
@@ -29,6 +30,7 @@
 - `/prompt-history`, `/ph`, `/p` commands to select from previous prompts
 - `/help`, `/?` commands to show help information
 - Interactive provider key management in configuration with gum choose
+- Editable extra instructions that are appended to the system prompt
 
 ## History Management
 - JSON-based chat history storage
@@ -56,6 +58,7 @@
 - Automatic dependency checking
 - Secure file permissions for config files
 - Missing key detection with automatic prompts to add
+- Extra instructions editing through `/config` -> `Edit Instructions` option
 
 ## Technical Features
 - Multi-line input support with `gum write`

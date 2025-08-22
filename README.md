@@ -27,6 +27,8 @@ A simple Bash script to interact with AI models (Google Gemini, OpenRouter, Open
 *   **Includes a loading spinner animation while waiting for AI responses, with retry options on API call failure.**
 *   **Allows using `/config` in the initial session prompt or during chat to reconfigure API settings.**
 *   **Allows using `/view` during chat to open the current history in your configured editor.**
+*   **Supports shorthand commands: `/h` for `/history`, `/c` for `/config`, `/q` for `/exit`, `/n` for `/new`, `/v` for `/view`, `/ph` or `/p` for `/prompt-history`, and `/?` for `/help`.**
+*   **Customizable system prompt with `/config` -> `Edit Instructions` option to add personal instructions that are appended to the base system prompt.**
 *   Renders AI responses as Markdown using `bat`.
 *   **Enhanced History Preview:** The `/history` command now provides a full-screen `fzf` interface with a live preview of the JSON content of chat history files using `bat`.
 *   Detects Markdown code blocks (\`\`\`...\`\`\`) in AI responses and allows copying their content using `gum choose`.
@@ -149,15 +151,17 @@ Run the script:
 # oliveowl
 ```
 
-The script will prompt you to enter a name for a new chat session, or you can type `/history` to load a previous chat, `/config` to reconfigure, or `/exit` to quit.
+The script will prompt you to enter a name for a new chat session, or you can type `/history` or `/h` to load a previous chat, `/config` or `/c` to reconfigure, or `/exit`, `/quit`, or `/q` to quit.
 
 **In-Chat Commands:**
 
-*   `/exit`: Quit the current chat session.
-*   `/new`: Start a new chat session (prompts for an optional name).
-*   `/history`: Use `fzf` to select and load a previous chat session, with a full-screen interface and a live preview of the JSON content using `bat`.
-*   `/config`: Access the configuration menu to change your API provider, model, add new providers, or change your editor.
-*   `/view`: Open the current chat history in your configured editor (e.g., `nvim`, `vi`, `nano`).
+*   `/exit` or `/q`: Quit the current chat session.
+*   `/new` or `/n`: Start a new chat session (prompts for an optional name).
+*   `/history` or `/h`: Use `fzf` to select and load a previous chat session, with a full-screen interface and a live preview of the JSON content using `bat`.
+*   `/config` or `/c`: Access the configuration menu to change your API provider, model, add new providers, or change your editor.
+*   `/view` or `/v`: Open the current chat history in your configured editor (e.g., `nvim`, `vi`, `nano`).
+*   `/prompt-history`, `/ph`, or `/p`: Select from previous prompts to reuse.
+*   `/help` or `/?`: Show help information.
 
 **User Input:**
 

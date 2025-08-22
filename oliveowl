@@ -1065,7 +1065,7 @@ start_new_session() {
 
   # Prompt for session name or command
   # Prompt for session name or command using gum input
-  user_choice=$(gum input --placeholder "Enter name for new chat session (or /history, /config, /exit)")
+  user_choice=$(gum input --placeholder "Enter name for new chat session (or /history, /h, /config, /c, /exit, /quit, /q)")
 
   # Check if gum input was cancelled (e.g., Ctrl+C or Esc)
   if [ $? -ne 0 ]; then
@@ -1074,15 +1074,15 @@ start_new_session() {
   fi
 
   case "$user_choice" in
-  "/exit" | "exit")
+  "/exit"|"/quit"|"/q" | "exit")
     gum style --foreground "#FF0000" --bold "Exiting OliveOwl."
     exit 0
     ;;
-  "/history")
+  "/history"|"/h")
     select_and_load_history # This function handles messages and returns status
     return $?               # Return status (0 for success, 1 for fail/cancel)
     ;;
-  "/config")
+  "/config"|"/c")
     echo "Switching to config..."
     configure_settings # Re-run config
     # Re-source config in case it changed
@@ -1576,8 +1576,8 @@ main() {
 
   # Display Welcome and Instructions using echo with ANSI colors
   echo -e "\e[0;94mWelcome to \e[1;35mOliveOwl\e[0;94m! Provider: \e[1;35m$API_PROVIDER\e[0;94m, Model: \e[1;35m$MODEL\e[0m"
-  echo -e "\e[0;94mType \e[1;35m/exit\e[0;94m to quit, \e[1;35m/history\e[0;94m to load previous chat, \e[1;35m/new\e[0;94m for new chat, \e[1;35m/config\e[0;94m to reconfigure.\e[0m"
-  echo -e "\e[0;94mType \e[1;35m/view\e[0;94m to open current history in \e[1;35m$EDITOR\e[0m.\e[0m" # Add /view instruction
+  echo -e "\e[0;94mType \e[1;35m/exit\e[0;94m, \e[1;35m/quit\e[0;94m, or \e[1;35m/q\e[0;94m to quit, \e[1;35m/history\e[0;94m or \e[1;35m/h\e[0;94m to load previous chat, \e[1;35m/new\e[0;94m or \e[1;35m/n\e[0;94m for new chat, \e[1;35m/config\e[0;94m or \e[1;35m/c\e[0;94m to reconfigure.\e[0m"
+  echo -e "\e[0;94mType \e[1;35m/view\e[0;94m or \e[1;35m/v\e[0;94m to open current history in \e[1;35m$EDITOR\e[0m.\e[0m" # Add /view instruction
 
   # Initial session setup
   local start_status
