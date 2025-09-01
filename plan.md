@@ -57,3 +57,15 @@
 ## Future Plans
 46. Up arrow key support in gum write to recall previous prompts (partial implementation with /prompt-history command)
 47. Streaming output support for real-time response display (to be implemented)
+48. Performance issue on /h fix this maybe via tmp files or faster code 
+49. proper boxing of ai response . 
+50. adding the ASCII art on /new 
+51. adding i3 bind info in readme to spawn OliveOwl in a floating terminal .
+       bindsym $mod+o exec alacritty --title "oliveowl-floating" -e oliveowl
+ for_window [title="^oliveowl-floating$"] floating enable, \
+ │           resize set 1000 600, \
+ │           move position center
+
+52. adding display popup binds for olive owl info in readme . 
+53. adding fetching tools for headless browsing . 
+54. finding better ASCII art 
