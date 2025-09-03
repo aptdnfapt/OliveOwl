@@ -862,14 +862,18 @@ display_history() {
 
 # Function to select and load a history file using fzf
 # Returns 0 on success, 1 on failure/cancel
-select_and_load_history() {
+# Build or update the history cache file in background
+build_history_cache() {
+  local cache_file="/tmp/tmp_rovodev_history_cache_$$"
+  
   # Find all .json files in the history directory, sorted by modification time.
   local -a history_files
   mapfile -t history_files < <(find "$HISTORY_DIR" -maxdepth 1 -name "*.json" -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null)
 
   if [ ${#history_files[@]} -eq 0 ]; then
-    echo "No history files found in $HISTORY_DIR."
-    return 1 # Indicate failure
+    # Create empty cache file if no history exists
+    > "$cache_file" 2>/dev/null
+    return 0
   fi
 
   local fzf_input=""
@@ -882,7 +886,7 @@ select_and_load_history() {
     fi
     
     # Ultra-fast: Extract session name from line 2 using pure text processing - NO jq needed!
-    if ! session_name=$(sed -n '2s/.*"session_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file_path"); then
+    if ! session_name=$(sed -n '2s/.*"session_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file_path" 2>/dev/null); then
         continue
     fi
     
@@ -905,14 +909,47 @@ select_and_load_history() {
     fzf_input+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
   done
 
+  # Write the cache file silently
+  printf "%s" "$fzf_input" > "$cache_file" 2>/dev/null
+}
+
+select_and_load_history() {
+  local cache_file="/tmp/tmp_rovodev_history_cache_$$"
+  
+  # Check if cache exists and is newer than the newest history file
+  local cache_needs_rebuild=1
+  if [ -f "$cache_file" ]; then
+    # Find the newest history file
+    local newest_history_file
+    newest_history_file=$(find "$HISTORY_DIR" -maxdepth 1 -name "*.json" -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -n1)
+    
+    # If cache is newer than the newest history file, we can use it
+    if [ -n "$newest_history_file" ] && [ "$cache_file" -nt "$newest_history_file" ]; then
+      cache_needs_rebuild=0
+    elif [ -z "$newest_history_file" ] && [ -f "$cache_file" ]; then
+      # No history files exist, but cache exists (might be empty)
+      cache_needs_rebuild=0
+    fi
+  fi
+  
+  # Rebuild cache if needed (silently in background)
+  if [ $cache_needs_rebuild -eq 1 ]; then
+    build_history_cache >/dev/null 2>&1
+  fi
+  
+  # Read the cache file
+  local fzf_input
+  if [ -f "$cache_file" ]; then
+    fzf_input=$(cat "$cache_file" 2>/dev/null)
+  else
+    echo "No history files found in $HISTORY_DIR."
+    return 1 # Indicate failure
+  fi
+
   if [ -z "$fzf_input" ]; then
     echo "No valid history files found to load."
     return 1
   fi
-
-  # Debug: show what fzf_input looks like
-  # echo "DEBUG fzf_input:" >&2
-  # echo "$fzf_input" >&2
 
   # Use fzf to select a session.
   local selected_line
@@ -1877,6 +1914,17 @@ if [[ "$1" == "--config" ]]; then
   exit 0
 fi
 
+# Cleanup function to remove temporary files
+cleanup_temp_files() {
+  local cache_file="/tmp/tmp_rovodev_history_cache_$$"
+  if [ -f "$cache_file" ]; then
+    rm -f "$cache_file" 2>/dev/null
+  fi
+}
+
+# Set up trap to cleanup on exit
+trap cleanup_temp_files EXIT
+
 # --- Run Setup and Main ---
 # Setup needs to run first to load config for main
 setup_config
@@ -1884,6 +1932,10 @@ setup_config
 # Extract just the command from the EDITOR variable (e.g., "nvim" from "nvim -R")
 read -r editor_command _ <<< "$EDITOR"
 check_dependency "$editor_command"
+
+# Build history cache in background for faster /h performance
+build_history_cache >/dev/null 2>&1 &
+
 main
 
 exit 0
