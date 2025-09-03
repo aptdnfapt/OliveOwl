@@ -877,11 +877,17 @@ select_and_load_history() {
   # Read session name from each file for the fzf list
   for file_path in "${history_files[@]}"; do
     # Skip if file is not readable or not a valid session file
-    if [ ! -r "$file_path" ] || ! jq -e '.session_name' "$file_path" >/dev/null 2>&1; then
+    if [ ! -r "$file_path" ]; then
       continue
     fi
-    local session_name
-    session_name=$(jq -r '.session_name' "$file_path")
+    
+    # Ultra-fast: Extract session name from line 2 using pure text processing - NO jq needed!
+    if ! session_name=$(sed -n '2s/.*"session_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file_path"); then
+        continue
+    fi
+    
+    # Skip if we didn't find a session name
+    [ -z "$session_name" ] && continue
     
     # If multiple files have the same session name, append filename to make them unique
     local display_name="$session_name"
