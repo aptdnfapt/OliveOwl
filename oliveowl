@@ -61,6 +61,12 @@ setup_config() {
     echo "CEREBRAS_API_KEY=" >>"$ENV_FILE"
     echo "# Ollama base URL (e.g., http://localhost:11434)" >>"$ENV_FILE"
     echo "OLLAMA_BASE_URL=" >>"$ENV_FILE"
+    echo "# Custom OpenAI-compatible providers" >>"$ENV_FILE"
+    echo "# Format: CUSTOM_PROVIDER_<PROVIDER_NAME>_URL=https://api.example.com/v1" >>"$ENV_FILE"
+    echo "# Format: CUSTOM_PROVIDER_<PROVIDER_NAME>_KEY=your_api_key" >>"$ENV_FILE"
+    echo "# Example:" >>"$ENV_FILE"
+    echo "# CUSTOM_PROVIDER_MYPROVIDER_URL=https://api.openai.com/v1" >>"$ENV_FILE"
+    echo "# CUSTOM_PROVIDER_MYPROVIDER_KEY=your_api_key" >>"$ENV_FILE"
     chmod 600 "$ENV_FILE" # Secure the file
     echo "Please edit $ENV_FILE and add your API keys and/or Ollama URL."
     # Optionally exit here or prompt user
@@ -77,8 +83,8 @@ setup_config() {
   set +a
 
   # Check if keys are set (basic check)
-  if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$CEREBRAS_API_KEY" ] && [ -z "$OLLAMA_BASE_URL" ]; then
-    echo "Warning: No API keys (Gemini, OpenRouter, OpenAI, Cerebras) or OLLAMA_BASE_URL found in $ENV_FILE. Please configure at least one." >&2
+  if [ -z "$GEMINI_API_KEY" ] && [ -z "$OPENROUTER_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$CEREBRAS_API_KEY" ] && [ -z "$OLLAMA_BASE_URL" ] && ! grep -q "^CUSTOM_PROVIDER_" "$ENV_FILE"; then
+    echo "Warning: No API keys (Gemini, OpenRouter, OpenAI, Cerebras) or OLLAMA_BASE_URL or custom providers found in $ENV_FILE. Please configure at least one." >&2
     # Decide if we should exit or continue
   fi
 
@@ -299,6 +305,14 @@ configure_settings() {
 
   # 2. Select API Provider (for Change Model or Add Provider paths)
   local providers="Gemini\nOpenRouter\nOpenAI\nOllama\nCerebras"
+  # Add custom providers to the list
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^CUSTOM_PROVIDER_([A-Z0-9_]+)_URL= ]]; then
+      provider_name="${BASH_REMATCH[1]}"
+      providers="$providers\n$provider_name"
+    fi
+  done < "$ENV_FILE"
+  
   API_PROVIDER=$(echo -e "$providers" | fzf --prompt="Select API Provider: " --height=7 --layout=reverse)
 
   if [ -z "$API_PROVIDER" ]; then
@@ -329,13 +343,23 @@ configure_settings() {
         api_key_exists=false
       fi
       ;;
-    "Ollama")
-      # For Ollama, check if URL is set
-      if [ -z "$OLLAMA_BASE_URL" ]; then
-        api_key_exists=false
-      fi
-      ;;
-  esac
+"Ollama")
+       # For Ollama, check if URL is set
+       if [ -z "$OLLAMA_BASE_URL" ]; then
+         api_key_exists=false
+       fi
+       ;;
+    *)
+       # Check if it's a custom provider
+       if [[ "$API_PROVIDER" =~ ^[A-Z0-9_]+$ ]]; then
+         local provider_url_var="CUSTOM_PROVIDER_${API_PROVIDER}_URL"
+         local provider_key_var="CUSTOM_PROVIDER_${API_PROVIDER}_KEY"
+         if [ -z "${!provider_url_var}" ] || [ -z "${!provider_key_var}" ]; then
+           api_key_exists=false
+         fi
+       fi
+       ;;
+   esac
 
   if [ "$api_key_exists" = false ]; then
     echo "API key/URL not found for $API_PROVIDER."
@@ -343,7 +367,12 @@ configure_settings() {
     add_key_choice=$(gum choose --header "Add $API_PROVIDER configuration?" "Yes" "No")
     
     if [ "$add_key_choice" = "Yes" ]; then
-      add_provider_key "$API_PROVIDER"
+      if [[ "$API_PROVIDER" =~ ^[A-Z0-9_]+$ ]]; then
+        # It's a custom provider, need to add it
+        add_custom_provider
+      else
+        add_provider_key "$API_PROVIDER"
+      fi
       # Reload environment variables
       set -a
       if [ -f "$ENV_FILE" ]; then
@@ -426,26 +455,45 @@ configure_settings() {
       echo "Successfully fetched Cerebras models." >&2
     fi
     ;;
-  "Ollama")
-    # OLLAMA_BASE_URL from .env will be used by call_api and fetch_ollama_models.
-    # Check if OLLAMA_BASE_URL is set, if not, fetching will use default.
-    if [ -z "$OLLAMA_BASE_URL" ]; then
-      echo "Info: OLLAMA_BASE_URL not set in $ENV_FILE. Will attempt to fetch models from default http://localhost:11434." >&2
-    fi
-    fetched_ollama_models=$(fetch_ollama_models)
-    if [ $? -eq 0 ] && [ -n "$fetched_ollama_models" ]; then
-      fetched_models="$fetched_ollama_models"
-      echo "Successfully fetched Ollama models." >&2
-    else
-      echo "Warning: Could not fetch Ollama models. Using manual entry only." >&2
-      fetched_models="" # Ensure it's empty on failure
-    fi
-    ;;
-  *)
-    echo "Invalid provider selected."
-    exit 1
-    ;;
-  esac
+"Ollama")
+     # OLLAMA_BASE_URL from .env will be used by call_api and fetch_ollama_models.
+     # Check if OLLAMA_BASE_URL is set, if not, fetching will use default.
+     if [ -z "$OLLAMA_BASE_URL" ]; then
+       echo "Info: OLLAMA_BASE_URL not set in $ENV_FILE. Will attempt to fetch models from default http://localhost:11434." >&2
+     fi
+     fetched_ollama_models=$(fetch_ollama_models)
+     if [ $? -eq 0 ] && [ -n "$fetched_ollama_models" ]; then
+       fetched_models="$fetched_ollama_models"
+       echo "Successfully fetched Ollama models." >&2
+     else
+       echo "Warning: Could not fetch Ollama models. Using manual entry only." >&2
+       fetched_models="" # Ensure it's empty on failure
+     fi
+     ;;
+   *)
+     # Check if it's a custom provider
+     if [[ "$API_PROVIDER" =~ ^[A-Z0-9_]+$ ]]; then
+       local provider_url_var="CUSTOM_PROVIDER_${API_PROVIDER}_URL"
+       local provider_key_var="CUSTOM_PROVIDER_${API_PROVIDER}_KEY"
+       if [ -n "${!provider_url_var}" ] && [ -n "${!provider_key_var}" ]; then
+         fetched_custom_models=$(fetch_custom_models "$API_PROVIDER")
+         if [ $? -eq 0 ] && [ -n "$fetched_custom_models" ]; then
+           fetched_models="$fetched_custom_models"
+           echo "Successfully fetched models from $API_PROVIDER." >&2
+         else
+           echo "Warning: Could not fetch models from $API_PROVIDER. Using manual entry only." >&2
+           fetched_models="" # Ensure it's empty on failure
+         fi
+       else
+         echo "Warning: Custom provider $API_PROVIDER not properly configured. Using manual entry only." >&2
+         fetched_models=""
+       fi
+     else
+       echo "Invalid provider selected."
+       exit 1
+     fi
+     ;;
+   esac
 
   # Prepare input for fzf: Manual option first, then fetched models
   fzf_input="$manual_entry_option"
@@ -532,7 +580,7 @@ add_provider() {
     echo "Add Provider selected."
     
     # Select provider
-    local providers="Gemini\nOpenRouter\nOpenAI\nCerebras\nOllama"
+    local providers="Gemini\nOpenRouter\nOpenAI\nCerebras\nOllama\nCustom OpenAI-Compatible"
     local selected_provider=$(echo -e "$providers" | fzf --prompt="Select Provider to Add: " --height=7 --layout=reverse)
     
     if [ -z "$selected_provider" ]; then
@@ -540,7 +588,11 @@ add_provider() {
       break
     fi
     
-    add_provider_key "$selected_provider"
+    if [[ "$selected_provider" == "Custom OpenAI-Compatible" ]]; then
+      add_custom_provider
+    else
+      add_provider_key "$selected_provider"
+    fi
     
     # Ask if user wants to add another provider
     echo ""
@@ -639,6 +691,120 @@ add_provider_key() {
       return 1
     fi
   fi
+}
+
+# Add a custom OpenAI-compatible provider
+add_custom_provider() {
+  echo "Add Custom OpenAI-Compatible Provider selected."
+  
+  # Get provider name
+  local provider_name
+  provider_name=$(gum input --header "Provider Configuration" --placeholder "Enter provider name (e.g., ZAI, MYPROVIDER)...")
+  if [ $? -ne 0 ] || [ -z "$provider_name" ]; then
+    echo "Provider name input cancelled."
+    return 1
+  fi
+  
+  # Convert to uppercase for consistency
+  provider_name=$(echo "$provider_name" | tr '[:lower:]' '[:upper:]')
+  
+  # Check if provider already exists
+  local provider_url_var="CUSTOM_PROVIDER_${provider_name}_URL"
+  local provider_key_var="CUSTOM_PROVIDER_${provider_name}_KEY"
+  
+  if [ -f "$ENV_FILE" ] && (grep -q "^$provider_url_var=" "$ENV_FILE" || grep -q "^$provider_key_var=" "$ENV_FILE"); then
+    echo "Provider $provider_name already exists. Use /config to change model or update manually."
+    return 1
+  fi
+  
+  # Get base URL
+  local base_url
+  base_url=$(gum input --header "Provider Configuration" --placeholder "Enter base URL (e.g., https://api.openai.com/v1)...")
+  if [ $? -ne 0 ] || [ -z "$base_url" ]; then
+    echo "Base URL input cancelled."
+    return 1
+  fi
+  
+  # Remove trailing slash if present
+  base_url=$(echo "$base_url" | sed 's:/*$::')
+  
+  # Get API key
+  local api_key
+  api_key=$(gum input --header "Provider Configuration" --placeholder "Enter API key..." --password)
+  if [ $? -ne 0 ] || [ -z "$api_key" ]; then
+    echo "API key input cancelled."
+    return 1
+  fi
+  
+  # Update .env file
+  if [ -f "$ENV_FILE" ]; then
+    echo "CUSTOM_PROVIDER_${provider_name}_URL=$base_url" >>"$ENV_FILE"
+    echo "CUSTOM_PROVIDER_${provider_name}_KEY=$api_key" >>"$ENV_FILE"
+  else
+    echo "# Add your API keys here" >"$ENV_FILE"
+    echo "GEMINI_API_KEY=" >>"$ENV_FILE"
+    echo "OPENROUTER_API_KEY=" >>"$ENV_FILE"
+    echo "OPENAI_API_KEY=" >>"$ENV_FILE"
+    echo "CEREBRAS_API_KEY=" >>"$ENV_FILE"
+    echo "OLLAMA_BASE_URL=" >>"$ENV_FILE"
+    echo "CUSTOM_PROVIDER_${provider_name}_URL=$base_url" >>"$ENV_FILE"
+    echo "CUSTOM_PROVIDER_${provider_name}_KEY=$api_key" >>"$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+  fi
+  
+  echo "Custom provider $provider_name saved to $ENV_FILE"
+  return 0
+}
+
+# Fetch models from a custom OpenAI-compatible provider
+fetch_custom_models() {
+  local provider_name="$1"
+  local provider_url_var="CUSTOM_PROVIDER_${provider_name}_URL"
+  local provider_key_var="CUSTOM_PROVIDER_${provider_name}_KEY"
+  
+  local base_url="${!provider_url_var}"
+  local api_key="${!provider_key_var}"
+  
+  if [ -z "$base_url" ] || [ -z "$api_key" ]; then
+    echo "Error: Provider $provider_name not properly configured." >&2
+    return 1
+  fi
+  
+  local models_api_url="${base_url}/models"
+  local models_json
+  
+  echo "Fetching models from $provider_name at $base_url..." >&2
+  models_json=$(curl -s -H "Authorization: Bearer $api_key" "$models_api_url")
+  
+  if [ $? -ne 0 ] || [ -z "$models_json" ]; then
+    echo "Error: Failed to fetch models from $provider_name." >&2
+    return 1
+  fi
+  
+  # Check for API errors
+  local custom_error=$(echo "$models_json" | jq -r '.error.message // empty')
+  if [ -n "$custom_error" ]; then
+    echo "Warning: $provider_name API Error when fetching models: $custom_error" >&2
+    return 1
+  fi
+  
+  # Check if data array exists
+  if ! echo "$models_json" | jq -e '.data | type == "array"' >/dev/null 2>&1; then
+    echo "Warning: Invalid JSON or missing 'data' array in $provider_name models response." >&2
+    return 1
+  fi
+  
+  # Extract model IDs, filter out duplicates, sort
+  local extracted_models
+  extracted_models=$(echo "$models_json" | jq -r '.data[].id // empty' | sort -u | grep .)
+  
+  if [ -z "$extracted_models" ]; then
+    echo "Warning: No models found in $provider_name response or failed to parse names." >&2
+    return 1
+  fi
+  
+  echo "$extracted_models"
+  return 0
 }
 
 # Get previous prompt by index (1 = most recent)
@@ -1431,6 +1597,58 @@ call_api() {
          echo "Error: Could not extract text from Ollama response. It might be empty." >&2
       fi
       # echo "Full Ollama Response: $response" >&2 # for debugging
+      return 1
+    fi
+  elif [[ "$API_PROVIDER" =~ ^[A-Z0-9_]+$ ]]; then
+    # Handle custom OpenAI-compatible providers
+    local provider_url_var="CUSTOM_PROVIDER_${API_PROVIDER}_URL"
+    local provider_key_var="CUSTOM_PROVIDER_${API_PROVIDER}_KEY"
+    
+    local base_url="${!provider_url_var}"
+    local api_key="${!provider_key_var}"
+    
+    if [ -z "$base_url" ] || [ -z "$api_key" ]; then
+      echo "Error: Custom provider $API_PROVIDER not properly configured." >&2
+      return 1
+    fi
+    
+    # Remove trailing slash if present
+    base_url=$(echo "$base_url" | sed 's:/*$::')
+    api_url="${base_url}/chat/completions"
+
+    # Custom provider payload structure (same as OpenAI/OpenRouter)
+    local system_message_json=$(create_api_message_json "system" "$SYSTEM_PROMPT")
+    local messages_json_array_with_system=$(echo "$history_json_array" | jq --argjson sys_msg "$system_message_json" '[$sys_msg] + .')
+
+    payload=$(jq -n --arg model "$MODEL" --argjson messages "$messages_json_array_with_system" \
+      '{model: $model, messages: $messages}')
+
+    # Make the curl request for custom provider
+    response=$(curl -s -X POST "$api_url" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $api_key" \
+      -d "$payload")
+
+    # Parse custom provider response and handle errors
+    if [ $? -ne 0 ]; then
+      echo "Error: curl command failed for $API_PROVIDER." >&2
+      return 1
+    fi
+
+    # Check for API errors
+    error_message=$(echo "$response" | jq -r '.error.message // empty')
+    if [ -n "$error_message" ]; then
+      echo "Error: $API_PROVIDER API Error: $error_message" >&2
+      # echo "Full $API_PROVIDER Response: $response" >&2 # for debugging
+      return 1
+    fi
+
+    # Extract the text content. Custom providers should follow OpenAI format.
+    response_text=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+
+    if [ -z "$response_text" ]; then
+      echo "Error: Could not extract text from $API_PROVIDER response." >&2
+      # echo "Full $API_PROVIDER Response: $response" >&2 # for debugging
       return 1
     fi
   else

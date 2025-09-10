@@ -17,7 +17,7 @@ A simple Bash script to interact with AI models (Google Gemini, OpenRouter, Open
 
 ## Features
 
-*   Supports Google Gemini, OpenRouter, OpenAI, Cerebras, and local Ollama models.
+*   Supports Google Gemini, OpenRouter, OpenAI, Cerebras, local Ollama models, and **custom OpenAI-compatible providers**.
 *   Interactive chat loop in the terminal.
 *   Saves chat history in JSON files (`~/.config/oliveowl/history/`).
 *   **Automatic Session Naming:** If you start a chat without giving it a name, the AI will automatically name the session based on the context of the conversation. The name is suggested after your first prompt and then refined every five prompts. Manually named sessions keep their original name.
@@ -35,6 +35,7 @@ A simple Bash script to interact with AI models (Google Gemini, OpenRouter, Open
 *   **Displays "token speed" (words per second) for each AI response, providing insight into response generation performance.**
 *   Configuration stored in `~/.config/oliveowl/`.
 *   Supports local Ollama instances, allowing you to use models running on your own machine.
+*   **Custom OpenAI-Compatible Providers:** Add any OpenAI-compatible API endpoint with custom base URL and API key.
 
 ## Dependencies
 
@@ -121,12 +122,18 @@ That's it! OliveOwl is now installed and ready to use.
         # Ollama base URL (optional, defaults to http://localhost:11434 if not set)
         # Example: OLLAMA_BASE_URL=http://my-ollama-server:11434
         OLLAMA_BASE_URL=
+        # Custom OpenAI-compatible providers
+        # Format: CUSTOM_PROVIDER_<PROVIDER_NAME>_URL=https://api.example.com/v1
+        # Format: CUSTOM_PROVIDER_<PROVIDER_NAME>_KEY=your_api_key
+        # Example:
+        CUSTOM_PROVIDER_MYPROVIDER_URL=https://api.openai.com/v1
+        CUSTOM_PROVIDER_MYPROVIDER_KEY=your_api_key
         ```
-        Replace the placeholders with your actual keys. For Gemini, OpenRouter, OpenAI, and Cerebras, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
-    *   **Interactive Method:** Use the configuration menu during setup or by typing `/config` in chat. Select "Add Provider" to interactively add API keys for any provider without manually editing files.
+        Replace the placeholders with your actual keys. For Gemini, OpenRouter, OpenAI, and Cerebras, you only need the key for the provider(s) you intend to use. For Ollama, `OLLAMA_BASE_URL` is optional; if left blank or commented out, the script will default to `http://localhost:11434`. Set it if your Ollama instance runs on a different host or port. For custom providers, use the format shown above with your provider name (in uppercase), base URL, and API key. Make the file readable only by you: `chmod 600 ~/.config/oliveowl/.env`.
+    *   **Interactive Method:** Use the configuration menu during setup or by typing `/config` in chat. Select "Add Provider" to interactively add API keys for any provider without manually editing files. For custom providers, select "Custom OpenAI-Compatible" and follow the prompts.
 3.  **Run Initial Config:** Run the script with the `--config` flag to access the configuration menu with three options: "Change Model", "Add Provider", and "Change Editor".
-    *   **Change Model:** Select your API provider (Gemini, OpenRouter, OpenAI, Cerebras, or Ollama) and model. For Gemini, OpenRouter, OpenAI, and Cerebras, the script will attempt to dynamically fetch available models if the API key is configured. For Ollama, the script will attempt to fetch models from your local Ollama instance (using the `OLLAMA_BASE_URL` if set, or the default `http://localhost:11434`). Ensure your Ollama instance is running and accessible.
-    *   **Add Provider:** Interactively add API keys for any provider without manually editing files.
+    *   **Change Model:** Select your API provider (Gemini, OpenRouter, OpenAI, Cerebras, Ollama, or any custom provider) and model. For Gemini, OpenRouter, OpenAI, Cerebras, and custom providers, the script will attempt to dynamically fetch available models if the API key is configured. For Ollama, the script will attempt to fetch models from your local Ollama instance (using the `OLLAMA_BASE_URL` if set, or the default `http://localhost:11434`). Ensure your Ollama instance is running and accessible.
+    *   **Add Provider:** Interactively add API keys for any provider without manually editing files. For custom OpenAI-compatible providers, select "Custom OpenAI-Compatible" and enter the provider name, base URL, and API key.
     *   **Change Editor:** Configure your preferred editor for viewing chat history.
     The script uses `fzf` for selection.
     ```bash
