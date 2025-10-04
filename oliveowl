@@ -1049,8 +1049,8 @@ build_history_cache() {
   local -a cached_files
   if [ -f "$cache_file" ]; then
     while IFS=$'\t' read -r display_name file_path; do
-      cached_files+=("$file_path")
-    done < <(cut -f2 "$cache_file" 2>/dev/null)
+      [ -n "$file_path" ] && cached_files+=("$file_path")
+    done < "$cache_file"
   fi
 
   # Read session name from each file for the fzf list
@@ -1094,11 +1094,11 @@ build_history_cache() {
     new_entries+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
   done
 
-  # If we have new entries, append them to the cache
+  # If we have new entries, append them to the cache and dedupe by path (column 2)
   if [ -n "$new_entries" ]; then
     printf "%s" "$new_entries" >> "$cache_file" 2>/dev/null
+    awk -F'\t' '!seen[$2]++' "$cache_file" > "${cache_file}.tmp" && mv "${cache_file}.tmp" "$cache_file"
   elif [ ! -f "$cache_file" ]; then
-    # Create empty cache if it doesn't exist and no new files
     > "$cache_file" 2>/dev/null
   fi
 }
