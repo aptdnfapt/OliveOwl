@@ -1042,33 +1042,15 @@ build_history_cache() {
     return 0
   fi
 
-  # For incremental approach, only add files that aren't already cached
-  local new_entries=""
+  # Rebuild the entire cache to ensure proper sort order by modification time
+  local cache_entries=""
   
-  # Read existing cached file paths
-  local -a cached_files
-  if [ -f "$cache_file" ]; then
-    while IFS=$'\t' read -r display_name file_path; do
-      [ -n "$file_path" ] && cached_files+=("$file_path")
-    done < "$cache_file"
-  fi
-
-  # Read session name from each file for the fzf list
+  # Read session name from each file for the fzf list (already sorted by ls -t)
   for file_path in "${history_files[@]}"; do
     # Skip if file is not readable or not a valid session file
     if [ ! -r "$file_path" ]; then
       continue
     fi
-    
-    # Check if this file is already in cache
-    local already_cached=0
-    for cached_file in "${cached_files[@]}"; do
-      if [ "$file_path" = "$cached_file" ]; then
-        already_cached=1
-        break
-      fi
-    done
-    [ $already_cached -eq 1 ] && continue
     
     # Ultra-fast: Extract session name from line 2 using pure text processing - NO jq needed!
     if ! session_name=$(sed -n '2s/.*"session_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file_path" 2>/dev/null); then
@@ -1090,17 +1072,12 @@ build_history_cache() {
       display_name="$session_name ($basename)"
     fi
     
-    # Add new entry
-    new_entries+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
+    # Add entry in proper order (newest first due to ls -t sorting)
+    cache_entries+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
   done
 
-  # If we have new entries, append them to the cache and dedupe by path (column 2)
-  if [ -n "$new_entries" ]; then
-    printf "%s" "$new_entries" >> "$cache_file" 2>/dev/null
-    awk -F'\t' '!seen[$2]++' "$cache_file" > "${cache_file}.tmp" && mv "${cache_file}.tmp" "$cache_file"
-  elif [ ! -f "$cache_file" ]; then
-    > "$cache_file" 2>/dev/null
-  fi
+  # Write the rebuilt cache
+  printf "%s" "$cache_entries" > "$cache_file" 2>/dev/null
 }
 
 select_and_load_history() {
