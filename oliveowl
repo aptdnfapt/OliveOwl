@@ -1030,7 +1030,7 @@ display_history() {
 # Returns 0 on success, 1 on failure/cancel
 # Build or update the history cache file in background
 build_history_cache() {
-  local cache_file="/tmp/tmp_rovodev_history_cache_$$"
+  local cache_file="$HOME/.oliveowl_history_cache"
   
   # Find all .json files in the history directory, sorted by modification time.
   local -a history_files
@@ -1042,7 +1042,16 @@ build_history_cache() {
     return 0
   fi
 
-  local fzf_input=""
+  # For incremental approach, only add files that aren't already cached
+  local new_entries=""
+  
+  # Read existing cached file paths
+  local -a cached_files
+  if [ -f "$cache_file" ]; then
+    while IFS=$'\t' read -r display_name file_path; do
+      cached_files+=("$file_path")
+    done < <(cut -f2 "$cache_file" 2>/dev/null)
+  fi
 
   # Read session name from each file for the fzf list
   for file_path in "${history_files[@]}"; do
@@ -1050,6 +1059,16 @@ build_history_cache() {
     if [ ! -r "$file_path" ]; then
       continue
     fi
+    
+    # Check if this file is already in cache
+    local already_cached=0
+    for cached_file in "${cached_files[@]}"; do
+      if [ "$file_path" = "$cached_file" ]; then
+        already_cached=1
+        break
+      fi
+    done
+    [ $already_cached -eq 1 ] && continue
     
     # Ultra-fast: Extract session name from line 2 using pure text processing - NO jq needed!
     if ! session_name=$(sed -n '2s/.*"session_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file_path" 2>/dev/null); then
@@ -1071,37 +1090,25 @@ build_history_cache() {
       display_name="$session_name ($basename)"
     fi
     
-    # Store "Session Name" and "File Path" separated by a tab for fzf
-    fzf_input+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
+    # Add new entry
+    new_entries+="$(printf "%s\t%s" "$display_name" "$file_path")"$'\n'
   done
 
-  # Write the cache file silently
-  printf "%s" "$fzf_input" > "$cache_file" 2>/dev/null
+  # If we have new entries, append them to the cache
+  if [ -n "$new_entries" ]; then
+    printf "%s" "$new_entries" >> "$cache_file" 2>/dev/null
+  elif [ ! -f "$cache_file" ]; then
+    # Create empty cache if it doesn't exist and no new files
+    > "$cache_file" 2>/dev/null
+  fi
 }
 
 select_and_load_history() {
-  local cache_file="/tmp/tmp_rovodev_history_cache_$$"
+  local cache_file="$HOME/.oliveowl_history_cache"
   
-  # Check if cache exists and is newer than the newest history file
-  local cache_needs_rebuild=1
-  if [ -f "$cache_file" ]; then
-    # Find the newest history file
-    local newest_history_file
-    newest_history_file=$(find "$HISTORY_DIR" -maxdepth 1 -name "*.json" -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -n1)
-    
-    # If cache is newer than the newest history file, we can use it
-    if [ -n "$newest_history_file" ] && [ "$cache_file" -nt "$newest_history_file" ]; then
-      cache_needs_rebuild=0
-    elif [ -z "$newest_history_file" ] && [ -f "$cache_file" ]; then
-      # No history files exist, but cache exists (might be empty)
-      cache_needs_rebuild=0
-    fi
-  fi
-  
-  # Rebuild cache if needed (silently in background)
-  if [ $cache_needs_rebuild -eq 1 ]; then
-    build_history_cache >/dev/null 2>&1
-  fi
+  # Always call build_history_cache to incrementally update with any new files
+  # This is fast since it only adds new entries, doesn't rebuild everything
+  build_history_cache >/dev/null 2>&1
   
   # Read the cache file
   local fzf_input
@@ -2140,10 +2147,8 @@ fi
 
 # Cleanup function to remove temporary files
 cleanup_temp_files() {
-  local cache_file="/tmp/tmp_rovodev_history_cache_$$"
-  if [ -f "$cache_file" ]; then
-    rm -f "$cache_file" 2>/dev/null
-  fi
+  # Clean up any temporary files (cache is now persistent, don't delete)
+  return 0
 }
 
 # Set up trap to cleanup on exit
